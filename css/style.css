@@ -1548,43 +1548,43 @@ body.dark-mode .status-power-solar {
 }
 
 .wave-group-front {
-  animation: oceanWaveFront 3.5s linear infinite;
-  filter: drop-shadow(0 2px 4px rgba(16, 185, 129, 0.4));
+  animation: oceanWaveFront 6s ease-in-out infinite alternate;
+  filter: drop-shadow(0 2px 5px rgba(16, 185, 129, 0.35));
 }
 
 .wave-group-back {
-  animation: oceanWaveBack 5.5s linear infinite;
-  filter: drop-shadow(0 1px 3px rgba(52, 211, 153, 0.3));
+  animation: oceanWaveBack 8.5s ease-in-out infinite alternate;
+  filter: drop-shadow(0 1px 4px rgba(52, 211, 153, 0.25));
 }
 
 @keyframes oceanWaveFront {
   0% {
-    transform: translateX(0);
+    transform: translateX(0) scaleY(0.95);
   }
 
   100% {
-    transform: translateX(-100px);
+    transform: translateX(-40px) scaleY(1.05);
   }
 }
 
 @keyframes oceanWaveBack {
   0% {
-    transform: translateX(0);
+    transform: translateX(0) scaleY(1.05);
   }
 
   100% {
-    transform: translateX(-100px);
+    transform: translateX(-60px) scaleY(0.95);
   }
 }
 
 /* Card 2 & 4: Circular Ring Progress Pulse Animations */
 .circle-gauge-small {
-  animation: pulseBorderSky 3s ease-in-out infinite, rotateSmallRing 6s ease-in-out infinite alternate;
+  animation: pulseBorderSky 4s ease-in-out infinite, rotateSmallRing 8s ease-in-out infinite alternate;
   box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
 }
 
 .ring-circle-box {
-  animation: pulseBorderPurple 3s ease-in-out infinite, rotateSmallRing 5s ease-in-out infinite alternate-reverse;
+  animation: pulseBorderPurple 4s ease-in-out infinite, rotateSmallRing 7s ease-in-out infinite alternate-reverse;
   box-shadow: 0 0 10px rgba(168, 85, 247, 0.2);
 }
 
@@ -1594,13 +1594,13 @@ body.dark-mode .status-power-solar {
   100% {
     border-color: #E2E8F0;
     border-top-color: var(--sky);
-    box-shadow: 0 0 5px rgba(56, 189, 248, 0.2);
+    box-shadow: 0 0 6px rgba(56, 189, 248, 0.2);
   }
 
   50% {
     border-color: #CBD5E1;
     border-top-color: #0284C7;
-    box-shadow: 0 0 16px rgba(56, 189, 248, 0.6);
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.45);
   }
 }
 
@@ -1610,13 +1610,13 @@ body.dark-mode .status-power-solar {
   100% {
     border-color: var(--purple);
     border-left-color: #DDD6FE;
-    box-shadow: 0 0 5px rgba(168, 85, 247, 0.2);
+    box-shadow: 0 0 6px rgba(168, 85, 247, 0.2);
   }
 
   50% {
     border-color: #7E22CE;
     border-left-color: #C4B5FD;
-    box-shadow: 0 0 16px rgba(168, 85, 247, 0.6);
+    box-shadow: 0 0 14px rgba(168, 85, 247, 0.45);
   }
 }
 
@@ -1626,15 +1626,15 @@ body.dark-mode .status-power-solar {
   }
 
   100% {
-    transform: rotate(18deg);
+    transform: rotate(12deg);
   }
 }
 
 /* Card 3: Equalizer Bar Bouncing Animation for Suhu Udara */
 .bar-col {
   transform-origin: bottom;
-  animation: barEqualizer 1.8s ease-in-out infinite alternate;
-  transition: height 0.4s ease, background-color 0.3s ease;
+  animation: barEqualizer 2.8s ease-in-out infinite alternate;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1), height 0.5s ease;
 }
 
 .bar-col:nth-child(1) {
@@ -1642,39 +1642,38 @@ body.dark-mode .status-power-solar {
 }
 
 .bar-col:nth-child(2) {
-  animation-delay: 0.35s;
+  animation-delay: 0.45s;
 }
 
 .bar-col:nth-child(3) {
-  animation-delay: 0.5s;
+  animation-delay: 0.8s;
 }
 
 .bar-col:nth-child(4) {
-  animation-delay: 0.2s;
+  animation-delay: 0.3s;
 }
 
 .bar-col:nth-child(5) {
-  animation-delay: 0.4s;
+  animation-delay: 0.65s;
 }
 
 .bar-col:nth-child(6) {
-  animation-delay: 0.6s;
+  animation-delay: 0.95s;
 }
 
 .bar-col:nth-child(7) {
-  animation-delay: 0.15s;
+  animation-delay: 0.2s;
 }
 
 @keyframes barEqualizer {
   0% {
-    transform: scaleY(0.85);
-    opacity: 0.85;
+    transform: scaleY(0.92);
+    opacity: 0.90;
   }
 
   100% {
-    transform: scaleY(1.14);
-    opacity: 1;
-    filter: drop-shadow(0 0 4px rgba(249, 115, 22, 0.5));
+    transform: scaleY(1.08);
+    opacity: 1.0;
   }
 }
 
@@ -2639,8 +2638,15 @@ body.dark-mode .time-off {
 }
 
 @keyframes modalScaleIn {
-  0% { transform: scale(0.94); opacity: 0; }
-  100% { transform: scale(1); opacity: 1; }
+  0% {
+    transform: scale(0.94);
+    opacity: 0;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .modal-header-styled {
@@ -2834,7 +2840,7 @@ body.dark-mode .time-adjust-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   transition: all 0.15s ease;
 }
 
@@ -3438,12 +3444,23 @@ body.dark-mode .ig-notif-time {
   overflow-y: auto;
   padding: 28px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+  transition: max-width 0.2s ease, padding 0.2s ease;
+}
+
+.modal-card.modal-card-compact {
+  max-width: 360px;
+  padding: 18px 20px;
+  border-radius: 18px;
 }
 
 .modal-content-styled {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.modal-content-styled.modal-compact {
+  gap: 10px;
 }
 
 .modal-heading-title {
@@ -4645,6 +4662,7 @@ body.dark-mode .sub-text-gray {
     opacity: 0;
     transform: scale(0.92) translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -4832,7 +4850,7 @@ body.dark-mode .point-meta-item .meta-val {
   border-radius: var(--radius-xl, 16px);
   padding: 8px 10px;
   margin-bottom: 8px;
-  box-shadow: var(--shadow-card, 0 4px 20px rgba(0,0,0,0.03));
+  box-shadow: var(--shadow-card, 0 4px 20px rgba(0, 0, 0, 0.03));
   position: relative;
   overflow: hidden;
 }
@@ -4891,10 +4909,25 @@ body.dark-mode .monitoring-kpi-item {
   margin-bottom: 1px;
 }
 
-.kpi-blue .kpi-icon-wrap { background: rgba(37, 99, 235, 0.1); color: #2563EB; }
-.kpi-emerald .kpi-icon-wrap { background: rgba(16, 185, 129, 0.1); color: #10B981; }
-.kpi-teal .kpi-icon-wrap { background: rgba(6, 182, 212, 0.1); color: #06B6D4; }
-.kpi-amber .kpi-icon-wrap { background: rgba(245, 158, 11, 0.1); color: #F59E0B; }
+.kpi-blue .kpi-icon-wrap {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563EB;
+}
+
+.kpi-emerald .kpi-icon-wrap {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10B981;
+}
+
+.kpi-teal .kpi-icon-wrap {
+  background: rgba(6, 182, 212, 0.1);
+  color: #06B6D4;
+}
+
+.kpi-amber .kpi-icon-wrap {
+  background: rgba(245, 158, 11, 0.1);
+  color: #F59E0B;
+}
 
 .monitoring-kpi-item .kpi-info {
   display: flex;
@@ -5027,6 +5060,7 @@ body.dark-mode .filter-sub-badge {
     font-size: 10.5px;
     gap: 3px;
   }
+
   .filter-sub-badge {
     display: none;
   }
@@ -5044,10 +5078,25 @@ body.dark-mode .filter-sub-badge {
   margin-bottom: 1px;
 }
 
-.kpi-blue .kpi-icon-wrap { background: rgba(37, 99, 235, 0.1); color: #2563EB; }
-.kpi-emerald .kpi-icon-wrap { background: rgba(16, 185, 129, 0.1); color: #10B981; }
-.kpi-teal .kpi-icon-wrap { background: rgba(6, 182, 212, 0.1); color: #06B6D4; }
-.kpi-amber .kpi-icon-wrap { background: rgba(245, 158, 11, 0.1); color: #F59E0B; }
+.kpi-blue .kpi-icon-wrap {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563EB;
+}
+
+.kpi-emerald .kpi-icon-wrap {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10B981;
+}
+
+.kpi-teal .kpi-icon-wrap {
+  background: rgba(6, 182, 212, 0.1);
+  color: #06B6D4;
+}
+
+.kpi-amber .kpi-icon-wrap {
+  background: rgba(245, 158, 11, 0.1);
+  color: #F59E0B;
+}
 
 .monitoring-kpi-item .kpi-info {
   display: flex;
@@ -5116,32 +5165,40 @@ body.dark-mode .monitoring-kpi-item .kpi-number {
     border-radius: 12px;
     margin-bottom: 6px;
   }
+
   .monitoring-hero-header {
     gap: 4px;
   }
+
   .monitoring-kpi-grid {
     gap: 4px;
     margin-bottom: 4px;
   }
+
   .monitoring-kpi-item {
     padding: 6px 1px;
     border-radius: 8px;
     gap: 2px;
   }
+
   .monitoring-kpi-item .kpi-icon-wrap {
     width: 22px;
     height: 22px;
     font-size: 10.5px;
   }
+
   .monitoring-kpi-item .kpi-label {
     font-size: 8.5px;
   }
+
   .monitoring-kpi-item .kpi-number {
     font-size: 11px;
   }
+
   .monitoring-kpi-item .kpi-badge {
     display: none;
   }
+
   .monitoring-kpi-item .kpi-sub {
     display: none;
   }
@@ -5166,7 +5223,7 @@ body.dark-mode .monitoring-kpi-item .kpi-number {
   padding: 20px;
   background: var(--card-bg, #FFFFFF);
   border: 1px solid var(--card-border, #E2E8F0);
-  box-shadow: var(--shadow-card, 0 4px 20px rgba(0,0,0,0.03));
+  box-shadow: var(--shadow-card, 0 4px 20px rgba(0, 0, 0, 0.03));
   position: relative;
   overflow: hidden;
   display: flex;
@@ -5179,10 +5236,25 @@ body.dark-mode .upgraded-chart-card {
 }
 
 /* Subtle Card Glow Accents */
-.card-glow-blue:hover { border-color: rgba(37, 99, 235, 0.4); box-shadow: 0 10px 25px rgba(37, 99, 235, 0.08); }
-.card-glow-emerald:hover { border-color: rgba(16, 185, 129, 0.4); box-shadow: 0 10px 25px rgba(16, 185, 129, 0.08); }
-.card-glow-teal:hover { border-color: rgba(6, 182, 212, 0.4); box-shadow: 0 10px 25px rgba(6, 182, 212, 0.08); }
-.card-glow-amber:hover { border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 10px 25px rgba(245, 158, 11, 0.08); }
+.card-glow-blue:hover {
+  border-color: rgba(37, 99, 235, 0.4);
+  box-shadow: 0 10px 25px rgba(37, 99, 235, 0.08);
+}
+
+.card-glow-emerald:hover {
+  border-color: rgba(16, 185, 129, 0.4);
+  box-shadow: 0 10px 25px rgba(16, 185, 129, 0.08);
+}
+
+.card-glow-teal:hover {
+  border-color: rgba(6, 182, 212, 0.4);
+  box-shadow: 0 10px 25px rgba(6, 182, 212, 0.08);
+}
+
+.card-glow-amber:hover {
+  border-color: rgba(245, 158, 11, 0.4);
+  box-shadow: 0 10px 25px rgba(245, 158, 11, 0.08);
+}
 
 .upgraded-chart-card .chart-card-header {
   display: flex;
@@ -5208,10 +5280,21 @@ body.dark-mode .upgraded-chart-card {
   flex-shrink: 0;
 }
 
-.bg-soft-blue { background: rgba(37, 99, 235, 0.1); }
-.bg-soft-emerald { background: rgba(16, 185, 129, 0.1); }
-.bg-soft-teal { background: rgba(6, 182, 212, 0.1); }
-.bg-soft-amber { background: rgba(245, 158, 11, 0.1); }
+.bg-soft-blue {
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.bg-soft-emerald {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.bg-soft-teal {
+  background: rgba(6, 182, 212, 0.1);
+}
+
+.bg-soft-amber {
+  background: rgba(245, 158, 11, 0.1);
+}
 
 .chart-main-title {
   font-size: 15px;
@@ -5267,24 +5350,31 @@ body.dark-mode .chart-interactive-hint {
     padding: 14px 12px;
     border-radius: 14px;
   }
+
   .upgraded-chart-card .chart-canvas-wrapper {
     height: 210px;
   }
+
   .chart-title-group {
     gap: 8px;
   }
+
   .chart-icon-box {
     width: 32px;
     height: 32px;
     font-size: 14px;
   }
+
   .chart-main-title {
     font-size: 13px;
   }
+
   .chart-meta-sub {
     font-size: 10px;
   }
+
   .chart-interactive-hint {
-    display: none; /* Hide on small mobile to save vertical space */
+    display: none;
+    /* Hide on small mobile to save vertical space */
   }
 }

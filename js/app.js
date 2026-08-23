@@ -428,41 +428,10 @@ function initRealtimeDataBinding() {
         if (data.status_daya !== undefined) { state.telemetry.status_daya = data.status_daya; updated = true; }
         else if (data.lamp !== undefined) { state.telemetry.status_daya = (data.lamp == 1 ? "Panel Surya" : "Aki 12V"); updated = true; }
 
-        if (data.relays && Array.isArray(data.relays)) {
-          state.userControlledRelays = state.userControlledRelays || {};
-          let changed = false;
-
-          data.relays.forEach((val, idx) => {
-            // Khusus Feeder CH6: Otomatis mati setelah durasi pakan selesai
-            if (idx === 5) {
-              const targetVal = (!window.feedCountdownInterval) ? 0 : val;
-              if (state.relays[idx] !== targetVal) {
-                state.relays[idx] = targetVal;
-                changed = true;
-              }
-            } else {
-              // Untuk CH1-CH5 (ATS, Pembesaran, Peremajaan, Aerator, Cadangan):
-              // Sinkronkan status riil dari hardware/ESP32
-              if (state.relays[idx] !== val) {
-                state.relays[idx] = val;
-                if (state.userControlledRelays[idx] !== undefined) {
-                  state.userControlledRelays[idx] = val;
-                }
-                changed = true;
-              }
-            }
-          });
-
-          if (changed && typeof syncRelayUI === 'function') {
-            syncRelayUI();
-          }
-        } else if (data.lamp !== undefined) {
-          const lampVal = parseInt(data.lamp);
-          if (state.relays[0] !== lampVal) {
-            state.relays[0] = lampVal;
-            if (state.userControlledRelays) state.userControlledRelays[0] = lampVal;
-            if (typeof syncRelayUI === 'function') syncRelayUI();
-          }
+        // Feeder CH6 (Index 5): Pastikan sinkron hanya saat proses pakan selesai
+        if (!window.feedCountdownInterval && state.relays[5] !== 0) {
+          state.relays[5] = 0;
+          if (typeof syncRelayUI === 'function') syncRelayUI();
         }
 
         if (updated) {
@@ -471,6 +440,27 @@ function initRealtimeDataBinding() {
         }
       }
     });
+
+    // Opsional: Berlangganan status saklar relay resmi dari Firebase jika ada perubahan eksternal
+    if (typeof window.aquaponicsDB.subscribeRelayStates === 'function') {
+      window.aquaponicsDB.subscribeRelayStates(relaysObj => {
+        if (relaysObj && typeof relaysObj === 'object') {
+          const rKeys = ["ats_solar", "pembesaran", "peremajaan", "aerator", "cadangan", "feeder"];
+          let rChanged = false;
+          rKeys.forEach((key, idx) => {
+            if (idx === 5) return; // Feeder dikontrol oleh timer 10 detik
+            if (relaysObj[key] !== undefined) {
+              const val = parseInt(relaysObj[key]) || 0;
+              if (state.relays[idx] !== val) {
+                state.relays[idx] = val;
+                rChanged = true;
+              }
+            }
+          });
+          if (rChanged && typeof syncRelayUI === 'function') syncRelayUI();
+        }
+      });
+    }
 
     if (window.aquaponicsDB.subscribeNotifications) {
       window.aquaponicsDB.subscribeNotifications(list => {
@@ -491,7 +481,7 @@ function initRealtimeDataBinding() {
     }
   }
 
-  setInterval(updateUI, 2000);
+  setInterval(updateUI, 1000); // 1-detik sinkronisasi UI
 }
 
 function pushRealtimeChartData(data) {
@@ -537,22 +527,28 @@ function pushRealtimeChartData(data) {
 
     if (period === 'harian' || period === 'daily') {
       const lastLabel = labels[labels.length - 1];
-      // Jika detik baru tercapai, geser window grafik secara realtime dengan animasi mulus
       if (lastLabel && lastLabel !== curTimeStr) {
         labels.shift();
         labels.push(curTimeStr);
         d.shift();
         d.push(val);
-        chart.update();
+        chart.update('none'); // Update stabil tanpa lompatan dari bawah
       } else {
-        // Update titik terakhir
         d[d.length - 1] = val;
-        chart.update();
+        chart.update('none');
       }
-    } else {
-      // Mingguan / Bulanan: perbarui nilai titik terkini
+    } else if (period === 'mingguan' || period === 'weekly') {
       d[d.length - 1] = val;
-      chart.update();
+      chart.update('none');
+    } else {
+      // Bulanan: perbarui titik bulan berjalan (Jan-Des 12 titik)
+      const curM = (new Date()).getMonth();
+      if (d.length === 12 && curM >= 0 && curM < 12) {
+        d[curM] = val;
+      } else {
+        d[d.length - 1] = val;
+      }
+      chart.update('none');
     }
   };
 
@@ -1058,10 +1054,10 @@ function getChartTimeLabels(period) {
   const now = new Date();
 
   if (p === 'harian' || p === 'daily') {
-    // Monitoring Harian: Jam, Menit, Detik (HH:mm:ss)
+    // Monitoring Harian: 10 titik waktu realtime dengan detik (HH:mm:ss) berinterval 2 detik
     const labels = [];
-    for (let i = 8; i >= 0; i--) {
-      const d = new Date(now.getTime() - (i * 15 * 1000));
+    for (let i = 9; i >= 0; i--) {
+      const d = new Date(now.getTime() - (i * 2 * 1000));
       const curHour = String(d.getHours()).padStart(2, '0');
       const curMin = String(d.getMinutes()).padStart(2, '0');
       const curSec = String(d.getSeconds()).padStart(2, '0');
@@ -1082,14 +1078,12 @@ function getChartTimeLabels(period) {
     }
     return labels;
   } else {
-    // Monitoring Bulanan: Tanggal, Bulan, Tahun (format DD/MM/YY contohnya 22/08/26)
+    // Monitoring Bulanan: 12 Bulan (Januari s/d Desember) format (Tanggal/Bulan/Tahun) contoh (28/01/26 s/d 28/12/26)
     const labels = [];
-    for (let i = 7; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - (i * 4));
-      const dateNum = String(d.getDate()).padStart(2, '0');
-      const monthNum = String(d.getMonth() + 1).padStart(2, '0');
-      const yearNum = String(d.getFullYear()).slice(-2);
+    const dateNum = String(now.getDate()).padStart(2, '0'); // Contoh: '28'
+    const yearNum = String(now.getFullYear()).slice(-2);   // Contoh: '26'
+    for (let m = 1; m <= 12; m++) {
+      const monthNum = String(m).padStart(2, '0');
       labels.push(`${dateNum}/${monthNum}/${yearNum}`);
     }
     return labels;
@@ -1107,18 +1101,7 @@ function initCharts() {
   const commonOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    animation: {
-      duration: 650,
-      easing: 'easeOutQuart'
-    },
-    transitions: {
-      active: {
-        animation: {
-          duration: 250,
-          easing: 'easeOutCubic'
-        }
-      }
-    },
+    animation: false, // Matikan animasi entrance agar garis tidak melompat dari nol (bawah)
     interaction: {
       mode: 'nearest',
       axis: 'x',
@@ -1147,14 +1130,11 @@ function initCharts() {
       legend: { display: false },
       tooltip: {
         enabled: true,
-        animation: {
-          duration: 200,
-          easing: 'easeOutQuart'
-        },
-        backgroundColor: '#27272A',
-        titleColor: '#FFFFFF',
+        animation: false,
+        backgroundColor: '#1E293B',
+        titleColor: '#F8FAFC',
         titleFont: { family: 'Inter', size: 12, weight: '700' },
-        bodyColor: '#FFFFFF',
+        bodyColor: '#F8FAFC',
         bodyFont: { family: 'Inter', size: 12, weight: '500' },
         borderColor: 'rgba(255, 255, 255, 0.1)',
         borderWidth: 1,
@@ -1185,16 +1165,18 @@ function initCharts() {
     },
     elements: {
       line: {
-        tension: 0.4,
+        tension: 0.45,
         cubicInterpolationMode: 'monotone',
         borderCapStyle: 'round',
-        borderJoinStyle: 'round'
+        borderJoinStyle: 'round',
+        spanGaps: true // Garis selalu tersambung utuh tanpa terputus
       },
       point: {
         radius: 4.5,
-        hoverRadius: 8.5,
-        hitRadius: 25,
-        borderWidth: 2.5
+        hoverRadius: 7.5,
+        hitRadius: 20,
+        borderWidth: 2,
+        hoverBorderWidth: 3
       }
     },
     scales: {
@@ -1216,20 +1198,27 @@ function initCharts() {
 
   const getInitialData = (type) => {
     if (period === 'bulanan' || period === 'monthly') {
-      if (type === 'suhuAir') return [30.1, 28.5, 29.2, 29.0, 28.6, 29.8, 28.0, currentSuhuAir];
-      if (type === 'tds') return [15, 0, 10, 5, 0, 20, 0, currentTds];
-      if (type === 'levelAir') return [88, 84, 81, 77, 73, 70, 68, currentLevel];
-      if (type === 'suhuUdara') return [24.8, 26.0, 27.5, 28.7, 28.0, 27.4, 27.0, currentSuhuUdara];
+      const curM = (new Date()).getMonth(); // Bulan berjalan (0: Jan, 7: Agu, 11: Des)
+      const make12Data = (baseArr, currentVal) => {
+        const arr = [...baseArr];
+        if (curM >= 0 && curM < 12) arr[curM] = currentVal;
+        return arr;
+      };
+      if (type === 'suhuAir') return make12Data([26.2, 26.5, 27.0, 27.4, 27.8, 28.1, 27.5, currentSuhuAir, 27.2, 26.8, 26.5, 26.0], currentSuhuAir);
+      if (type === 'tds') return make12Data([510, 525, 540, 560, 580, 610, 630, currentTds, 620, 590, 560, 530], currentTds);
+      if (type === 'levelAir') return make12Data([82, 85, 84, 86, 88, 85, 83, currentLevel, 85, 87, 86, 84], currentLevel);
+      if (type === 'suhuUdara') return make12Data([25.5, 26.0, 26.8, 27.5, 28.2, 28.6, 28.0, currentSuhuUdara, 27.5, 27.0, 26.2, 25.8], currentSuhuUdara);
     } else if (period === 'mingguan' || period === 'weekly') {
       if (type === 'suhuAir') return [25.9, 26.1, 26.3, 26.0, 26.4, 26.8, currentSuhuAir];
       if (type === 'tds') return [520, 540, 560, 530, 580, 620, currentTds];
       if (type === 'levelAir') return [85, 84, 83, 82, 80, 75, currentLevel];
       if (type === 'suhuUdara') return [25.5, 26.0, 26.2, 26.5, 27.8, 28.9, currentSuhuUdara];
     } else {
-      if (type === 'suhuAir') return [25.8, 25.6, 25.5, 26.0, 26.8, 27.2, 26.9, 26.5, currentSuhuAir];
-      if (type === 'tds') return [580, 585, 590, 595, 610, 605, 600, 592, currentTds];
-      if (type === 'levelAir') return [72, 70, 69, 75, 74, 71, 70, 69, currentLevel];
-      if (type === 'suhuUdara') return [24.5, 24.0, 25.2, 28.5, 31.0, 30.2, 28.4, 27.5, currentSuhuUdara];
+      // Harian: 10 titik data tersambung utuh tanpa terputus
+      if (type === 'suhuAir') return [26.0, 26.1, 26.0, 26.2, 26.3, 26.1, 26.2, 26.0, 26.1, currentSuhuAir || 26.0];
+      if (type === 'tds') return [180, 182, 180, 184, 182, 185, 183, 184, 185, currentTds || 184];
+      if (type === 'levelAir') return [78, 79, 78, 80, 79, 80, 79, 78, 79, currentLevel || 79];
+      if (type === 'suhuUdara') return [26.0, 26.1, 26.0, 26.2, 26.1, 26.0, 26.2, 26.1, 26.0, currentSuhuUdara || 26.0];
     }
   };
 
@@ -1246,13 +1235,13 @@ function initCharts() {
           data: getInitialData('suhuAir'),
           borderColor: '#2563EB',
           backgroundColor: 'rgba(37, 99, 235, 0.12)',
-          borderWidth: 2.5,
+          borderWidth: 2.8,
           fill: true,
-          tension: 0.4,
+          tension: 0.45,
           cubicInterpolationMode: 'monotone',
           spanGaps: true,
           pointRadius: 4.5,
-          pointHoverRadius: 8.5,
+          pointHoverRadius: 7.5,
           pointBackgroundColor: '#2563EB',
           pointBorderColor: '#FFFFFF',
           pointBorderWidth: 2,
@@ -1292,13 +1281,13 @@ function initCharts() {
           data: getInitialData('tds'),
           borderColor: '#10B981',
           backgroundColor: 'rgba(16, 185, 129, 0.10)',
-          borderWidth: 2.5,
+          borderWidth: 2.8,
           fill: true,
-          tension: 0.4,
+          tension: 0.45,
           cubicInterpolationMode: 'monotone',
           spanGaps: true,
           pointRadius: 4.5,
-          pointHoverRadius: 8.5,
+          pointHoverRadius: 7.5,
           pointBackgroundColor: '#10B981',
           pointBorderColor: '#FFFFFF',
           pointBorderWidth: 2,
@@ -1339,13 +1328,13 @@ function initCharts() {
           data: getInitialData('levelAir'),
           borderColor: '#06B6D4',
           backgroundColor: 'rgba(6, 182, 212, 0.12)',
-          borderWidth: 2.5,
+          borderWidth: 2.8,
           fill: true,
-          tension: 0.4,
+          tension: 0.45,
           cubicInterpolationMode: 'monotone',
           spanGaps: true,
           pointRadius: 4.5,
-          pointHoverRadius: 8.5,
+          pointHoverRadius: 7.5,
           pointBackgroundColor: '#06B6D4',
           pointBorderColor: '#FFFFFF',
           pointBorderWidth: 2,
@@ -1385,13 +1374,13 @@ function initCharts() {
           data: getInitialData('suhuUdara'),
           borderColor: '#F97316',
           backgroundColor: 'rgba(249, 115, 22, 0.12)',
-          borderWidth: 2.5,
+          borderWidth: 2.8,
           fill: true,
-          tension: 0.4,
+          tension: 0.45,
           cubicInterpolationMode: 'monotone',
           spanGaps: true,
           pointRadius: 4.5,
-          pointHoverRadius: 8.5,
+          pointHoverRadius: 7.5,
           pointBackgroundColor: '#F97316',
           pointBorderColor: '#FFFFFF',
           pointBorderWidth: 2,
@@ -1620,11 +1609,17 @@ function updateChartsData() {
     levelAirData = [85, 84, 83, 82, 80, 75, currentLevel];
     suhuUdaraData = [25.5, 26.0, 26.2, 26.5, 27.8, 28.9, currentSuhuUdara];
   } else {
-    // Bulanan data matching user screenshot
-    suhuAirData = [30.1, 28.5, 29.2, 29.0, 28.6, 29.8, 28.0, currentSuhuAir];
-    tdsData = [15, 0, 10, 5, 0, 20, 0, currentTds];
-    levelAirData = [88, 84, 81, 77, 73, 70, 68, currentLevel];
-    suhuUdaraData = [24.8, 26.0, 27.5, 28.7, 28.0, 27.4, 27.0, currentSuhuUdara];
+    // Bulanan: 12 Bulan (Januari s/d Desember)
+    const curM = (new Date()).getMonth();
+    const make12 = (baseArr, currentVal) => {
+      const arr = [...baseArr];
+      if (curM >= 0 && curM < 12) arr[curM] = currentVal;
+      return arr;
+    };
+    suhuAirData = make12([26.2, 26.5, 27.0, 27.4, 27.8, 28.1, 27.5, currentSuhuAir, 27.2, 26.8, 26.5, 26.0], currentSuhuAir);
+    tdsData = make12([510, 525, 540, 560, 580, 610, 630, currentTds, 620, 590, 560, 530], currentTds);
+    levelAirData = make12([82, 85, 84, 86, 88, 85, 83, currentLevel, 85, 87, 86, 84], currentLevel);
+    suhuUdaraData = make12([25.5, 26.0, 26.8, 27.5, 28.2, 28.6, 28.0, currentSuhuUdara, 27.5, 27.0, 26.2, 25.8], currentSuhuUdara);
   }
 
   // Update datasets dynamically without flickering or glitches
@@ -1683,9 +1678,10 @@ function initControlRelays() {
     if (saved !== null) {
       const v = parseInt(saved) || 0;
       state.relays[i] = v;
-      state.userControlledRelays[i] = v;
+      state.userControlledRelays[i] = true;
     }
   }
+  state.relays[5] = 0; // Feeder CH6 selalu mulai dari kondisi OFF
   syncRelayUI();
 }
 
@@ -1709,11 +1705,10 @@ function triggerDirectFeeding(portion = 1) {
   }
 
   const pVal = parseInt(portion) || 1;
-  const feedDuration = pVal * 10000;
-  let remainingSec = Math.round(feedDuration / 1000);
+  const feedDuration = pVal * 10000; // Tepat 10.000 ms (10 Detik per Porsi)
+  let remainingSec = 10 * pVal;
 
   state.relays[5] = 1;
-
   syncRelayUI();
 
   const triggerManualBtn = document.getElementById('trigger-manual-feed-btn');
@@ -1722,16 +1717,25 @@ function triggerDirectFeeding(portion = 1) {
     triggerManualBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Pakan Sedang Berjalan (${remainingSec}s)...`;
   }
 
-  if (window.feedCountdownInterval) clearInterval(window.feedCountdownInterval);
+  if (window.feedCountdownInterval) {
+    clearInterval(window.feedCountdownInterval);
+    window.feedCountdownInterval = null;
+  }
+
   window.feedCountdownInterval = setInterval(() => {
     remainingSec--;
     const mBtn = document.getElementById('trigger-manual-feed-btn');
+    const ch6Btn = document.getElementById('btn-relay-6');
+
     if (remainingSec > 0 && state.relays[5] === 1) {
       if (mBtn) {
         mBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Pakan Sedang Berjalan (${remainingSec}s)...`;
       }
+      if (ch6Btn) {
+        ch6Btn.innerText = `MEMBERI PAKAN (${remainingSec}s)...`;
+      }
     } else {
-      // Hitungan mundur selesai: Matikan feeder seketika dan kembalikan tombol normal
+      // Hitungan mundur selesai (Detik ke-0): Matikan feeder seketika dan kembalikan UI normal
       clearInterval(window.feedCountdownInterval);
       window.feedCountdownInterval = null;
       if (window.feederTimerRef) {
@@ -1744,6 +1748,8 @@ function triggerDirectFeeding(portion = 1) {
       if (window.aquaponicsDB) {
         window.aquaponicsDB.updateRelayState(6, 0);
       }
+
+      addNotification('success', 'Pemberian Pakan Selesai', `Feeder Pakan telah selesai aktif tepat selama ${feedDuration / 1000} detik (${pVal} Porsi).`);
     }
   }, 1000);
 
@@ -1754,10 +1760,10 @@ function triggerDirectFeeding(portion = 1) {
 
   addNotification('success', 'Pakan Ikan Dikirim', `Feeder Pakan aktif selama ${feedDuration / 1000} detik (${pVal} Porsi)`);
 
-  const feedMsg = `\u{1F41F} <b>[PEMBERIAN PAKAN BERHASIL]</b>\n` +
-    `\u{26A1} <b>Feeder Pakan (Relay 6):</b> Aktif ${feedDuration / 1000} Detik\n` +
-    `\u{1F35A} <b>Jumlah Pakan:</b> ${pVal} Porsi\n` +
-    `\u{23F0} <b>Jadwal Berikutnya:</b> 08:00 (1 Porsi)`;
+  const feedMsg = `🐟 <b>[PEMBERIAN PAKAN BERHASIL]</b>\n` +
+    `⚡ <b>Feeder Pakan (Relay 6):</b> Aktif ${feedDuration / 1000} Detik\n` +
+    `🍚 <b>Jumlah Pakan:</b> ${pVal} Porsi\n` +
+    `⏰ <b>Waktu:</b> ${new Date().toLocaleTimeString('id-ID')}`;
   sendTelegramAlert(`feed_success_${Date.now()}`, feedMsg, true);
 }
 window.triggerDirectFeeding = triggerDirectFeeding;
@@ -1765,8 +1771,11 @@ window.triggerDirectFeeding = triggerDirectFeeding;
 function toggleRelayChannel(channel) {
   if (channel === 6) {
     if (state.relays[5] === 1) {
-      // If currently ON, turn OFF immediately
-      if (window.feederTimerRef) clearTimeout(window.feederTimerRef);
+      // Jika sedang berjalan, pengguna klik untuk menghentikan seketika
+      if (window.feederTimerRef) {
+        clearTimeout(window.feederTimerRef);
+        window.feederTimerRef = null;
+      }
       if (window.feedCountdownInterval) {
         clearInterval(window.feedCountdownInterval);
         window.feedCountdownInterval = null;
@@ -1774,9 +1783,10 @@ function toggleRelayChannel(channel) {
       state.relays[5] = 0;
       syncRelayUI();
       if (window.aquaponicsDB) window.aquaponicsDB.updateRelayState(6, 0);
+      addNotification('info', 'Pakan Dihentikan', 'Pemberian pakan manual telah dihentikan oleh pengguna.');
       return;
     } else {
-      // If currently OFF, open confirmation modal popup
+      // Jika kondisi OFF, buka popup konfirmasi pemilihan porsi (default 1 porsi = 10 detik)
       if (typeof window.showFeedModal === 'function') {
         window.showFeedModal(1);
       } else if (typeof window.triggerShowFeedModal === 'function') {
@@ -1792,9 +1802,9 @@ function toggleRelayChannel(channel) {
   const currentVal = (state.relays[chIdx] === 1) ? 1 : 0;
   const newVal = currentVal === 1 ? 0 : 1;
 
-  // Kunci status murni ke pilihan pengguna
+  // Status murni ditentukan oleh klik pengguna (User Authoritative)
   state.userControlledRelays = state.userControlledRelays || {};
-  state.userControlledRelays[chIdx] = newVal;
+  state.userControlledRelays[chIdx] = true;
   state.relays[chIdx] = newVal;
   try {
     localStorage.setItem('aquaponics_relay_' + chIdx, newVal);
@@ -1812,8 +1822,8 @@ function toggleRelayChannel(channel) {
     "Feeder Pakan (CH6)"
   ];
   const rName = relayNames[channel - 1] || `Saklar CH${channel}`;
-  const statusStr = newVal === 1 ? "DINYALAKAN (ON) \u{1F7E2}" : "DIMATIKAN (OFF) \u{1F534}";
-  sendTelegramAlert(`relay_toggle_${channel}_${Date.now()}`, `\u{26A1} <b>[KONTROL SAKLAR RELAY]</b>\n\u{1F50C} <b>${rName}:</b> ${statusStr}`, true);
+  const statusStr = newVal === 1 ? "DINYALAKAN (ON) 🟢" : "DIMATIKAN (OFF) 🔴";
+  sendTelegramAlert(`relay_toggle_${channel}_${Date.now()}`, `⚡ <b>[KONTROL SAKLAR RELAY]</b>\n🔌 <b>${rName}:</b> ${statusStr}`, true);
 
   // Dispatch command via Firebase DB & update sensor_data/relays
   if (window.aquaponicsDB) {
@@ -2299,8 +2309,8 @@ function evaluatePumpSchedules() {
     if (!sched.active) return;
 
     const chIdx = sched.channel - 1;
-    // Do not interfere if user recently toggled this relay manually
-    if (state.userRelayLocks && state.userRelayLocks[chIdx] && Date.now() < state.userRelayLocks[chIdx]) {
+    // Jangan ubah status saklar jika telah diatur secara manual oleh pengguna
+    if (state.userControlledRelays && state.userControlledRelays[chIdx]) {
       return;
     }
 
@@ -2333,9 +2343,14 @@ function evaluatePumpSchedules() {
 function initConfigModals() {
   const modal = document.getElementById('config-modal');
 
-  const openCustomModal = (htmlContent) => {
+  const openCustomModal = (htmlContent, isCompact = false) => {
     const modalCard = modal.querySelector('.modal-card');
     if (modalCard) {
+      if (isCompact) {
+        modalCard.classList.add('modal-card-compact');
+      } else {
+        modalCard.classList.remove('modal-card-compact');
+      }
       modalCard.innerHTML = htmlContent;
     }
     modal.classList.add('active');
@@ -2368,240 +2383,255 @@ function initConfigModals() {
   });
 
   // 1. Pengaturan WiFi
-  document.getElementById('cfg-wifi').addEventListener('click', () => {
-    openCustomModal(`
-      <div class="modal-content-styled">
-        <h2 class="modal-heading-title">1. Pengaturan WiFi</h2>
-        
-        <div class="info-box-blue">
-          <div class="info-box-text">
-            <strong>🎯 Tujuan:</strong> Menghubungkan alat ESP32 ke jaringan internet WiFi agar alat bisa online dan mengirim data ke Firebase/Server secara real-time.
+  const cfgWifi = document.getElementById('cfg-wifi');
+  if (cfgWifi) {
+    cfgWifi.addEventListener('click', () => {
+      openCustomModal(`
+        <div class="modal-content-styled modal-compact">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <h2 class="modal-heading-title" style="font-size: 16px; font-weight: 800; margin: 0; color: var(--text-main);">Pengaturan WiFi</h2>
+            <button onclick="closeConfigModal()" style="background: none; border: none; font-size: 20px; color: var(--text-muted, #64748B); cursor: pointer; padding: 0 4px; line-height: 1;" title="Tutup">&times;</button>
+          </div>
+
+          <div class="form-field-group" style="gap: 4px;">
+            <label class="field-label" style="font-size: 12px; font-weight: 700;">SSID (Nama WiFi)</label>
+            <input type="text" class="modal-input-box" style="padding: 9px 12px; font-size: 13px; border-radius: 10px;" value="HOMESTAY 5G" id="modal-wifi-ssid" />
+          </div>
+
+          <div class="form-field-group" style="gap: 4px;">
+            <label class="field-label" style="font-size: 12px; font-weight: 700;">Password WiFi</label>
+            <div class="input-with-eye">
+              <input type="password" class="modal-input-box" style="padding: 9px 12px; font-size: 13px; border-radius: 10px;" value="Makanbang" id="modal-wifi-pass" />
+              <button class="eye-toggle-btn" style="right: 10px; font-size: 14px;" type="button" onclick="togglePasswordVisibility('modal-wifi-pass', this)">
+                <i class="fa-regular fa-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-actions-row" style="margin-top: 4px; display: flex; justify-content: flex-end; gap: 8px;">
+            <button class="btn-modal-close" style="padding: 7px 16px; font-size: 12.5px; border-radius: 18px;" onclick="closeConfigModal()">Tutup</button>
+            <button class="btn-modal-save" style="padding: 7px 18px; font-size: 12.5px; border-radius: 18px;" onclick="saveConfigModal('WiFi')">Simpan</button>
           </div>
         </div>
-
-        <div class="form-field-group">
-          <label class="field-label">SSID (Nama WiFi)</label>
-          <input type="text" class="modal-input-box" value="HOMESTAY 5G" id="modal-wifi-ssid" />
-        </div>
-
-        <div class="form-field-group">
-          <label class="field-label">Password WiFi</label>
-          <div class="input-with-eye">
-            <input type="password" class="modal-input-box" value="Makanbang" id="modal-wifi-pass" />
-            <button class="eye-toggle-btn" type="button" onclick="togglePasswordVisibility('modal-wifi-pass', this)">
-              <i class="fa-regular fa-eye"></i>
-            </button>
-          </div>
-        </div>
-
-        <div class="modal-actions-row">
-          <button class="btn-modal-close" onclick="closeConfigModal()">Tutup</button>
-          <button class="btn-modal-save" onclick="saveConfigModal('WiFi')">Simpan</button>
-        </div>
-      </div>
-    `);
-  });
+      `, true);
+    });
+  }
 
   // 2. Pengaturan Server & Gateway
-  document.getElementById('cfg-server').addEventListener('click', () => {
-    openCustomModal(`
-      <div class="modal-content-styled">
-        <h2 class="modal-heading-title">2. Pengaturan Server &amp; Gateway</h2>
-        
-        <div class="info-box-blue">
-          <div class="info-box-text">
-            <strong>📡 Tujuan:</strong> Mengatur frekuensi komunikasi nirkabel LoRa E220 915MHz antara Node Sensor dan Gateway ESP32.
+  const cfgServer = document.getElementById('cfg-server');
+  if (cfgServer) {
+    cfgServer.addEventListener('click', () => {
+      openCustomModal(`
+        <div class="modal-content-styled">
+          <h2 class="modal-heading-title">2. Pengaturan Server &amp; Gateway</h2>
+          
+          <div class="info-box-blue">
+            <div class="info-box-text">
+              <strong>📡 Tujuan:</strong> Mengatur frekuensi komunikasi nirkabel LoRa E220 915MHz antara Node Sensor dan Gateway ESP32.
+            </div>
+          </div>
+
+          <div class="form-field-group">
+            <label class="field-label">LoRa Channel</label>
+            <input type="number" class="modal-input-box" value="65" />
+          </div>
+
+          <div class="form-field-group">
+            <label class="field-label">Frekuensi LoRa</label>
+            <input type="text" class="modal-input-box readonly-bg" value="915.125 MHz" readonly />
+          </div>
+
+          <div class="form-field-group">
+            <label class="field-label">Baud Rate Serial (E220)</label>
+            <input type="text" class="modal-input-box readonly-bg" value="9600 Bps" readonly />
+          </div>
+
+          <div class="modal-actions-row">
+            <button class="btn-modal-close" onclick="closeConfigModal()">Tutup</button>
+            <button class="btn-modal-save" onclick="saveConfigModal('Server')">Simpan</button>
           </div>
         </div>
-
-        <div class="form-field-group">
-          <label class="field-label">LoRa Channel</label>
-          <input type="number" class="modal-input-box" value="65" />
-        </div>
-
-        <div class="form-field-group">
-          <label class="field-label">Frekuensi LoRa</label>
-          <input type="text" class="modal-input-box readonly-bg" value="915.125 MHz" readonly />
-        </div>
-
-        <div class="form-field-group">
-          <label class="field-label">Baud Rate Serial (E220)</label>
-          <input type="text" class="modal-input-box readonly-bg" value="9600 Bps" readonly />
-        </div>
-
-        <div class="modal-actions-row">
-          <button class="btn-modal-close" onclick="closeConfigModal()">Tutup</button>
-          <button class="btn-modal-save" onclick="saveConfigModal('Server')">Simpan</button>
-        </div>
-      </div>
-    `);
-  });
+      `);
+    });
+  }
 
   // 3. Kalibrasi Sensor
-  document.getElementById('cfg-calibration').addEventListener('click', () => {
-    openCustomModal(`
-      <div class="modal-content-styled">
-        <h2 class="modal-heading-title">3. Kalibrasi Sensor</h2>
-        
-        <div class="info-box-blue">
-          <div class="info-box-text">
-            <strong>⚖️ Tujuan:</strong> Mengatur offset dan faktor pengali kalibrasi untuk sensor TDS Analog dan Ultrasonik AJ-SR04M.
+  const cfgCalib = document.getElementById('cfg-calibration');
+  if (cfgCalib) {
+    cfgCalib.addEventListener('click', () => {
+      openCustomModal(`
+        <div class="modal-content-styled">
+          <h2 class="modal-heading-title">3. Kalibrasi Sensor</h2>
+          
+          <div class="info-box-blue">
+            <div class="info-box-text">
+              <strong>⚖️ Tujuan:</strong> Mengatur offset dan faktor pengali kalibrasi untuk sensor TDS Analog dan Ultrasonik AJ-SR04M.
+            </div>
+          </div>
+
+          <div class="form-field-group">
+            <label class="field-label">Faktor Kalibrasi TDS Analog</label>
+            <input type="number" step="0.01" class="modal-input-box" value="1.00" />
+          </div>
+
+          <div class="form-field-group">
+            <label class="field-label">Kedalaman Kolam Baseline (Ultrasonik cm)</label>
+            <input type="number" class="modal-input-box" value="100" />
+          </div>
+
+          <div class="modal-actions-row">
+            <button class="btn-modal-close" onclick="closeConfigModal()">Tutup</button>
+            <button class="btn-modal-save" onclick="saveConfigModal('Kalibrasi')">Simpan</button>
           </div>
         </div>
-
-        <div class="form-field-group">
-          <label class="field-label">Faktor Kalibrasi TDS Analog</label>
-          <input type="number" step="0.01" class="modal-input-box" value="1.00" />
-        </div>
-
-        <div class="form-field-group">
-          <label class="field-label">Kedalaman Kolam Baseline (Ultrasonik cm)</label>
-          <input type="number" class="modal-input-box" value="100" />
-        </div>
-
-        <div class="modal-actions-row">
-          <button class="btn-modal-close" onclick="closeConfigModal()">Tutup</button>
-          <button class="btn-modal-save" onclick="saveConfigModal('Kalibrasi')">Simpan</button>
-        </div>
-      </div>
-    `);
-  });
+      `);
+    });
+  }
 
   // 4. Integrasi Firebase
-  document.getElementById('cfg-firebase').addEventListener('click', () => {
-    openCustomModal(`
-      <div class="modal-content-styled">
-        <h2 class="modal-heading-title">4. Integrasi Firebase ⭐</h2>
-        
-        <div class="info-box-amber">
-          <div class="info-box-text">
-            <strong>📍 Ambil kredensial dari:</strong><br/>
-            <code class="code-path">Firebase Console &gt; Project Settings &gt; General &gt; Your apps &gt; Web</code>
+  const cfgFirebase = document.getElementById('cfg-firebase');
+  if (cfgFirebase) {
+    cfgFirebase.addEventListener('click', () => {
+      openCustomModal(`
+        <div class="modal-content-styled">
+          <h2 class="modal-heading-title">4. Integrasi Firebase ⭐</h2>
+          
+          <div class="info-box-amber">
+            <div class="info-box-text">
+              <strong>📍 Ambil kredensial dari:</strong><br/>
+              <code class="code-path">Firebase Console &gt; Project Settings &gt; General &gt; Your apps &gt; Web</code>
+            </div>
+          </div>
+
+          <div class="form-field-group">
+            <label class="field-label">Project ID</label>
+            <input type="text" class="modal-input-box" value="aquaponics-system-8d6f6" />
+          </div>
+
+          <div class="form-field-group">
+            <label class="field-label">Web API Key</label>
+            <input type="text" class="modal-input-box" value="AlzaSyDAnrIQ6_gihFgcep-Pu3dz3IqxCWBoCDo" />
+          </div>
+
+          <div class="form-field-group">
+            <label class="field-label">Database URL</label>
+            <input type="text" class="modal-input-box" value="https://aquaponics-system-8d6f6-default-rtdb.asia-s" />
+          </div>
+
+          <div class="form-field-group">
+            <label class="field-label">Storage Bucket</label>
+            <input type="text" class="modal-input-box" value="aquaponics-system-8d6f6.firebasestorage.app" />
+          </div>
+
+          <div class="form-field-group">
+            <label class="field-label">Messaging Sender ID</label>
+            <input type="text" class="modal-input-box" value="666440506386" />
+          </div>
+
+          <div class="modal-actions-row">
+            <button class="btn-modal-close" onclick="closeConfigModal()">Tutup</button>
+            <button class="btn-modal-save" onclick="saveConfigModal('Firebase')">Simpan</button>
           </div>
         </div>
-
-        <div class="form-field-group">
-          <label class="field-label">Project ID</label>
-          <input type="text" class="modal-input-box" value="aquaponics-system-8d6f6" />
-        </div>
-
-        <div class="form-field-group">
-          <label class="field-label">Web API Key</label>
-          <input type="text" class="modal-input-box" value="AlzaSyDAnrIQ6_gihFgcep-Pu3dz3IqxCWBoCDo" />
-        </div>
-
-        <div class="form-field-group">
-          <label class="field-label">Database URL</label>
-          <input type="text" class="modal-input-box" value="https://aquaponics-system-8d6f6-default-rtdb.asia-s" />
-        </div>
-
-        <div class="form-field-group">
-          <label class="field-label">Storage Bucket</label>
-          <input type="text" class="modal-input-box" value="aquaponics-system-8d6f6.firebasestorage.app" />
-        </div>
-
-        <div class="form-field-group">
-          <label class="field-label">Messaging Sender ID</label>
-          <input type="text" class="modal-input-box" value="666440506386" />
-        </div>
-
-        <div class="modal-actions-row">
-          <button class="btn-modal-close" onclick="closeConfigModal()">Tutup</button>
-          <button class="btn-modal-save" onclick="saveConfigModal('Firebase')">Simpan</button>
-        </div>
-      </div>
-    `);
-  });
+      `);
+    });
+  }
 
   // 5. Pengaturan Notifikasi (Telegram Bot)
-  document.getElementById('cfg-notif').addEventListener('click', () => {
-    openCustomModal(`
-      <div class="modal-content-styled">
-        <h2 class="modal-heading-title">5. Pengaturan Notifikasi (Telegram Bot)</h2>
-        
-        <div class="info-box-green">
-          <div class="info-box-text">
-            <strong>🎆 Notifikasi Telegram Bot (Instan &amp; Gratis):</strong><br/>
-            Mengirim pesan alarm darurat langsung ke Telegram HP Anda saat air kolam kritis atau suhu/TDS tidak normal.
+  const cfgNotif = document.getElementById('cfg-notif');
+  if (cfgNotif) {
+    cfgNotif.addEventListener('click', () => {
+      openCustomModal(`
+        <div class="modal-content-styled">
+          <h2 class="modal-heading-title">5. Pengaturan Notifikasi (Telegram Bot)</h2>
+          
+          <div class="info-box-green">
+            <div class="info-box-text">
+              <strong>🎆 Notifikasi Telegram Bot (Instan &amp; Gratis):</strong><br/>
+              Mengirim pesan alarm darurat langsung ke Telegram HP Anda saat air kolam kritis atau suhu/TDS tidak normal.
+            </div>
+          </div>
+
+          <div class="checkbox-container-box">
+            <span class="field-label">Enable Notifikasi Telegram (On / Off)</span>
+            <input type="checkbox" class="modal-checkbox-custom" checked />
+          </div>
+
+          <div class="form-field-group">
+            <label class="field-label">Bot Token Telegram</label>
+            <input type="text" class="modal-input-box" value="8758597072:AAEe0ymSD2RfdICAoF4EoCflpf2oe" />
+          </div>
+
+          <div class="form-field-group">
+            <label class="field-label">Chat ID Telegram Anda</label>
+            <input type="text" class="modal-input-box" value="7207067918" />
+          </div>
+
+          <button class="btn-outline-blue width-100 margin-v-10" type="button" onclick="alert('🚀 Pesan uji coba berhasil dikirim ke Telegram!')">
+            🚀 Kirim Notifikasi Uji Coba ke Telegram
+          </button>
+
+          <div class="modal-actions-row">
+            <button class="btn-modal-close" onclick="closeConfigModal()">Tutup</button>
+            <button class="btn-modal-save" onclick="saveConfigModal('Notifikasi')">Simpan</button>
           </div>
         </div>
-
-        <div class="checkbox-container-box">
-          <span class="field-label">Enable Notifikasi Telegram (On / Off)</span>
-          <input type="checkbox" class="modal-checkbox-custom" checked />
-        </div>
-
-        <div class="form-field-group">
-          <label class="field-label">Bot Token Telegram</label>
-          <input type="text" class="modal-input-box" value="8758597072:AAEe0ymSD2RfdICAoF4EoCflpf2oe" />
-        </div>
-
-        <div class="form-field-group">
-          <label class="field-label">Chat ID Telegram Anda</label>
-          <input type="text" class="modal-input-box" value="7207067918" />
-        </div>
-
-        <button class="btn-outline-blue width-100 margin-v-10" type="button" onclick="alert('🚀 Pesan uji coba berhasil dikirim ke Telegram!')">
-          🚀 Kirim Notifikasi Uji Coba ke Telegram
-        </button>
-
-        <div class="modal-actions-row">
-          <button class="btn-modal-close" onclick="closeConfigModal()">Tutup</button>
-          <button class="btn-modal-save" onclick="saveConfigModal('Notifikasi')">Simpan</button>
-        </div>
-      </div>
-    `);
-  });
+      `);
+    });
+  }
 
   // 6. Tentang Aplikasi
-  document.getElementById('cfg-about').addEventListener('click', () => {
-    openCustomModal(`
-      <div class="modal-content-styled">
-        <h2 class="modal-heading-title">6. Tentang Aplikasi</h2>
-        
-        <div class="about-hero-card">
-          <div class="about-icon-blue"><i class="fa-solid fa-layer-group"></i></div>
-          <div class="about-hero-text">
-            <h3 class="about-app-title">Smart Akuaponik</h3>
-            <p class="about-app-sub">Sistem Monitoring &amp; Kontrol IoT Akuaponik Berbasis LoRa E220 &amp; Firebase Realtime Cloud</p>
-            <div class="about-badges-row">
-              <span class="badge-blue-pill">v1.0.0 Production</span>
-              <span class="badge-green-pill">LoRa Ch 65 (915 MHz)</span>
+  const cfgAbout = document.getElementById('cfg-about');
+  if (cfgAbout) {
+    cfgAbout.addEventListener('click', () => {
+      openCustomModal(`
+        <div class="modal-content-styled">
+          <h2 class="modal-heading-title">6. Tentang Aplikasi</h2>
+          
+          <div class="about-hero-card">
+            <div class="about-icon-blue"><i class="fa-solid fa-layer-group"></i></div>
+            <div class="about-hero-text">
+              <h3 class="about-app-title">Smart Akuaponik</h3>
+              <p class="about-app-sub">Sistem Monitoring &amp; Kontrol IoT Akuaponik Berbasis LoRa E220 &amp; Firebase Realtime Cloud</p>
+              <div class="about-badges-row">
+                <span class="badge-blue-pill">v1.0.0 Production</span>
+                <span class="badge-green-pill">LoRa Ch 65 (915 MHz)</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="about-device-grid">
-          <div class="device-mini-card">
-            <span class="dev-label">ID Perangkat Gateway</span>
-            <strong class="dev-val">ESP32-GATEWAY-02</strong>
-          </div>
-          <div class="device-mini-card">
-            <span class="dev-label">Node Transmitter</span>
-            <strong class="dev-val">ESP32-NODE-01</strong>
-          </div>
-        </div>
-
-        <div class="about-steps-card">
-          <div class="steps-title">📜 Urutan Pengisian Konfigurasi:</div>
-          <div class="step-list-items">
-            <div class="step-item">
-              <span class="step-num step-num-blue">1</span>
-              <div class="step-text"><strong>Pengaturan WiFi</strong> &mdash; Menghubungkan ESP32 Gateway ke internet.</div>
+          <div class="about-device-grid">
+            <div class="device-mini-card">
+              <span class="dev-label">ID Perangkat Gateway</span>
+              <strong class="dev-val">ESP32-GATEWAY-02</strong>
             </div>
-            <div class="step-item">
-              <span class="step-num step-num-green">2</span>
-              <div class="step-text"><strong>Integrasi Firebase</strong> &mdash; Sinkronisasi data ke cloud database secara real-time.</div>
+            <div class="device-mini-card">
+              <span class="dev-label">Node Transmitter</span>
+              <strong class="dev-val">ESP32-NODE-01</strong>
             </div>
           </div>
-        </div>
 
-        <div class="modal-actions-center">
-          <button class="btn-modal-close width-100" onclick="closeConfigModal()">Tutup</button>
+          <div class="about-steps-card">
+            <div class="steps-title">📜 Urutan Pengisian Konfigurasi:</div>
+            <div class="step-list-items">
+              <div class="step-item">
+                <span class="step-num step-num-blue">1</span>
+                <div class="step-text"><strong>Pengaturan WiFi</strong> &mdash; Menghubungkan ESP32 Gateway ke internet.</div>
+              </div>
+              <div class="step-item">
+                <span class="step-num step-num-green">2</span>
+                <div class="step-text"><strong>Integrasi Firebase</strong> &mdash; Sinkronisasi data ke cloud database secara real-time.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-actions-center">
+            <button class="btn-modal-close width-100" onclick="closeConfigModal()">Tutup</button>
+          </div>
         </div>
-      </div>
-    `);
-  });
+      `);
+    });
+  }
 
   // Logout
   const sidebarLogout = document.getElementById('sidebar-logout-btn');

@@ -20,7 +20,7 @@ if (typeof firebase !== 'undefined' && !firebase.apps.length) {
 class AquaponicsFirebase {
   constructor() {
     this.baseUrl = FIREBASE_CONFIG.databaseURL;
-    this.pollInterval = 1500;
+    this.pollInterval = 1000; // 1-second REST polling fallback
     this.onSensorUpdateCallback = null;
     this.onStatusUpdateCallback = null;
     this.onNotifUpdateCallback = null;
@@ -244,6 +244,16 @@ class AquaponicsFirebase {
   async deleteSchedule(index) {
     console.log("[Firebase] Schedule removed at index:", index);
     return true;
+  }
+
+  // 5b. Berlangganan status resmi relay
+  subscribeRelayStates(callback) {
+    if (this.hasSDK && this.db) {
+      this.db.ref('relay').on('value', snap => {
+        const val = snap.val();
+        if (val && typeof callback === 'function') callback(val);
+      });
+    }
   }
 
   // 6. Jadwal Pompa Sirkulasi
