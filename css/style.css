@@ -3873,6 +3873,230 @@ body.dark-mode .ig-notif-time {
   color: var(--emerald);
 }
 
+/* FORMAL ACADEMIC ABOUT MODAL */
+.academic-modal-header {
+  border-bottom: 1.5px solid var(--border-color, #E2E8F0);
+  padding-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.academic-badge-institute {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: var(--primary, #2563EB);
+  text-transform: uppercase;
+}
+.academic-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-main, #0F172A);
+  margin: 4px 0 2px 0;
+  line-height: 1.35;
+}
+.academic-subtitle {
+  font-size: 11.5px;
+  color: var(--text-muted, #64748B);
+  font-weight: 500;
+}
+.academic-section-card {
+  background: var(--card-bg, #FFFFFF);
+  border: 1px solid var(--border-color, #E2E8F0);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+.academic-section-title {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--text-main, #1E293B);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.academic-person-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.academic-person-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-hover, #F8FAFC);
+  border: 1px solid var(--border-color, #E2E8F0);
+  border-radius: 10px;
+  padding: 10px 12px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.academic-person-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+.academic-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.academic-avatar-blue {
+  background: #EFF6FF;
+  color: #2563EB;
+  border: 1px solid #BFDBFE;
+}
+.academic-avatar-emerald {
+  background: #ECFDF5;
+  color: #059669;
+  border: 1px solid #A7F3D0;
+}
+.academic-avatar-purple {
+  background: #F5F3FF;
+  color: #7C3AED;
+  border: 1px solid #DDD6FE;
+}
+.academic-person-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-main, #0F172A);
+  line-height: 1.2;
+}
+.academic-person-meta {
+  font-size: 11px;
+  color: var(--text-muted, #64748B);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+.academic-feature-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+.academic-feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--bg-hover, #F8FAFC);
+  border: 1px solid var(--border-color, #E2E8F0);
+}
+.academic-feature-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.academic-feature-text {
+  font-size: 11.5px;
+  color: var(--text-main, #334155);
+  line-height: 1.45;
+}
+.academic-feature-text strong {
+  color: var(--text-main, #0F172A);
+  font-weight: 700;
+}
+.academic-hero-box {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.05) 0%, rgba(16, 185, 129, 0.05) 100%);
+  border: 1px solid rgba(37, 99, 235, 0.15);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.academic-vision-box {
+  background: #FEF3C7;
+  border: 1px solid #FDE68A;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.academic-services-box {
+  background: #F0FDF4;
+  border: 1px solid #DCFCE7;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.academic-contact-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+@media (max-width: 480px) {
+  .academic-contact-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.academic-contact-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-hover, #F8FAFC);
+  border: 1px solid var(--border-color, #E2E8F0);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 11.5px;
+  color: var(--text-main, #1E293B);
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+.academic-contact-item:hover {
+  background: #EFF6FF;
+  border-color: #BFDBFE;
+  color: #2563EB;
+}
+.academic-social-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.social-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-hover, #F8FAFC);
+  border: 1px solid var(--border-color, #E2E8F0);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-main, #334155);
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+.social-pill-btn:hover {
+  background: #2563EB;
+  color: #FFFFFF;
+  border-color: #2563EB;
+}
+.academic-copyright {
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--text-muted, #94A3B8);
+  padding: 6px 0 2px 0;
+  border-top: 1px solid var(--border-color, #E2E8F0);
+  margin-top: 4px;
+}
+
 /* FOOTER ACTIONS */
 .modal-actions-row {
   display: grid;
@@ -5604,42 +5828,50 @@ body.dark-mode .calib-procedure-note {
 .calib-dense-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 7px 12px;
+  gap: 8px 12px;
   width: 100%;
 }
 
-.calib-dense-card {
+.calib-card-row {
   background: var(--bg-main, #F8FAFC);
   border: 1px solid var(--card-border, #E2E8F0);
   border-radius: 8px;
-  padding: 6px 10px;
+  padding: 8px 10px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  transition: border-color 0.15s ease;
+  flex-direction: column;
+  gap: 6px;
   box-sizing: border-box;
+  width: 100%;
+  transition: border-color 0.15s ease;
 }
 
-.calib-dense-card:hover {
+.calib-card-row:hover {
   border-color: var(--primary, #2563EB);
 }
 
-body.dark-mode .calib-dense-card {
+body.dark-mode .calib-card-row {
   background: rgba(30, 41, 59, 0.5);
   border-color: rgba(255, 255, 255, 0.08);
 }
 
-.calib-meta-left {
+.calib-row-header {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 110px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+}
+
+.calib-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .calib-sensor-name {
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-main, #0F172A);
   display: flex;
   align-items: center;
@@ -5664,18 +5896,35 @@ body.dark-mode .calib-live-text {
   color: #34D399;
 }
 
-.calib-action-center {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex: 1;
+.calib-status-badge {
+  font-size: 10.5px;
+  color: var(--text-muted, #64748B);
+  background: rgba(0, 0, 0, 0.04);
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  text-align: right;
 }
 
-.calib-compact-inp {
+body.dark-mode .calib-status-badge {
+  background: rgba(255, 255, 255, 0.06);
+  color: #94A3B8;
+}
+
+.calib-row-body {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
-  min-width: 65px;
-  max-width: 95px;
-  padding: 5px 8px;
+  box-sizing: border-box;
+}
+
+.calib-input-field {
+  width: 100%;
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 4px 8px;
   font-size: 11.5px;
   font-weight: 600;
   border: 1px solid var(--card-border, #CBD5E1);
@@ -5683,54 +5932,86 @@ body.dark-mode .calib-live-text {
   color: var(--text-main, #0F172A);
   border-radius: 6px;
   outline: none;
+  box-sizing: border-box;
   transition: border-color 0.15s ease;
 }
 
-.calib-compact-inp:focus {
+.calib-input-field:focus {
   border-color: var(--primary, #2563EB);
 }
 
-body.dark-mode .calib-compact-inp {
+body.dark-mode .calib-input-field {
   background: #0F172A;
   border-color: #334155;
   color: #F8FAFC;
 }
 
-.calib-icon-btn {
+.calib-dual-inputs {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.calib-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.calib-input-wrap label {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--text-muted, #64748B);
+}
+
+.calib-save-btn {
   background: #2563EB;
   color: #FFFFFF;
   border: none;
   border-radius: 6px;
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 32px;
+  min-width: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.15s ease;
+  padding: 0;
 }
 
-.calib-icon-btn:hover {
+.calib-save-btn:hover {
   background: #1D4ED8;
   transform: scale(1.05);
 }
 
-.calib-badge-right {
-  font-size: 10px;
-  color: var(--text-muted, #64748B);
-  background: rgba(0, 0, 0, 0.04);
-  padding: 3px 6px;
+.calib-warning-banner {
+  font-size: 10.5px;
+  color: #2563EB;
+  background: rgba(37, 99, 235, 0.08);
+  border-left: 3px solid #2563EB;
+  padding: 5px 8px;
   border-radius: 4px;
-  white-space: nowrap;
-  min-width: 70px;
-  text-align: right;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.35;
+  box-sizing: border-box;
 }
 
-body.dark-mode .calib-badge-right {
-  background: rgba(255, 255, 255, 0.06);
-  color: #94A3B8;
+body.dark-mode .calib-warning-banner {
+  background: rgba(37, 99, 235, 0.15);
+  color: #60A5FA;
 }
 
 .calib-modal-footer {
@@ -5796,102 +6077,113 @@ body.dark-mode .btn-close-compact {
    MOBILE RESPONSIVE RULES FOR CALIBRATION MODAL (SCREEN <= 640px)
    ========================================================================== */
 @media (max-width: 640px) {
+  .modal-overlay {
+    padding: 8px !important;
+  }
+
   .modal-card.modal-card-wide {
-    width: 95% !important;
-    max-width: 440px !important;
-    padding: 14px 12px !important;
-    max-height: 94vh !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 10px 8px !important;
+    border-radius: 12px !important;
+    max-height: 96vh !important;
     overflow-y: auto !important;
     box-sizing: border-box !important;
   }
 
   .calib-procedure-note {
-    font-size: 10px !important;
-    padding: 5px 8px !important;
-    line-height: 1.35 !important;
+    font-size: 9.5px !important;
+    padding: 4px 6px !important;
+    line-height: 1.3 !important;
+    gap: 4px !important;
   }
 
   .calib-dense-grid {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: minmax(0, 1fr) !important;
     gap: 6px !important;
-    width: 100% !important;
-  }
-
-  .calib-dense-card {
-    display: grid !important;
-    grid-template-columns: 1fr auto !important;
-    grid-template-areas: 
-      "meta badge"
-      "action action" !important;
-    gap: 5px 8px !important;
-    padding: 7px 10px !important;
     width: 100% !important;
     box-sizing: border-box !important;
   }
 
-  .calib-meta-left {
-    grid-area: meta !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    gap: 8px !important;
+  .calib-card-row {
+    padding: 6px 8px !important;
+    gap: 4px !important;
+    border-radius: 6px !important;
+    width: 100% !important;
     min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .calib-row-header {
+    flex-wrap: wrap !important;
+    gap: 2px 6px !important;
+    width: 100% !important;
   }
 
   .calib-sensor-name {
-    font-size: 11.5px !important;
-  }
-
-  .calib-live-text {
     font-size: 11px !important;
   }
 
-  .calib-badge-right {
-    grid-area: badge !important;
-    justify-self: end !important;
-    min-width: 0 !important;
+  .calib-live-text {
     font-size: 10.5px !important;
-    padding: 2px 7px !important;
-    text-align: right !important;
   }
 
-  .calib-action-center {
-    grid-area: action !important;
+  .calib-status-badge {
+    font-size: 9.5px !important;
+    padding: 1px 5px !important;
+  }
+
+  .calib-row-body {
+    gap: 4px !important;
     width: 100% !important;
-    display: flex !important;
-    gap: 6px !important;
     box-sizing: border-box !important;
   }
 
-  .calib-compact-inp {
-    flex: 1 !important;
+  .calib-input-field {
+    width: 100% !important;
     min-width: 0 !important;
-    max-width: none !important;
-    height: 32px !important;
-    font-size: 12px !important;
-    padding: 5px 10px !important;
+    height: 30px !important;
+    font-size: 11px !important;
+    padding: 3px 6px !important;
     box-sizing: border-box !important;
   }
 
-  .calib-icon-btn {
-    width: 36px !important;
-    height: 32px !important;
-    font-size: 13px !important;
-    flex-shrink: 0 !important;
+  .calib-dual-inputs {
+    width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .calib-input-wrap {
+    width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .calib-save-btn {
+    width: 32px !important;
+    height: 30px !important;
+    min-width: 32px !important;
+    font-size: 12px !important;
+  }
+
+  .calib-warning-banner {
+    font-size: 9.5px !important;
+    padding: 4px 6px !important;
   }
 
   .calib-modal-footer {
-    padding-top: 8px !important;
+    padding-top: 6px !important;
   }
 
   .btn-reset-compact {
-    padding: 6px 10px !important;
-    font-size: 10.5px !important;
+    padding: 5px 8px !important;
+    font-size: 10px !important;
   }
 
   .btn-close-compact {
-    padding: 6px 16px !important;
-    font-size: 11.5px !important;
+    padding: 5px 12px !important;
+    font-size: 11px !important;
   }
 
   /* Mobile Responsive Adjustments for TDS Metric Card */

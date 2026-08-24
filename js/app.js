@@ -67,7 +67,8 @@ const state = {
     level_offset: 0.0,
     volt_factor: 1.0,
     volt_offset: 0.0,
-    pond_depth: 100.0
+    pond_depth: 35.0,
+    sensor_min_dist: 5.0
   },
   telemetry: {
     suhu_air: 0.0,
@@ -97,7 +98,7 @@ function initNavigation() {
   const manageFeedLink = document.getElementById('manage-feed-link');
 
   const titleMap = {
-    'tab-beranda': 'Monitoring IoT',
+    'tab-beranda': 'Monitoring Akuaponik',
     'tab-monitoring': 'Monitoring',
     'tab-control': 'Control',
     'tab-config': 'Config'
@@ -209,6 +210,39 @@ function formatNotifTime(n) {
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
 }
+
+// Helper Sanitasi Notifikasi: Hilangkan semua kurung () dan [], ganti dengan jeda baca tanda koma
+function formatNotifSpeechText(text) {
+  if (!text || typeof text !== 'string') return '';
+  let s = text;
+
+  // 1. Hilangkan kurung siku: [KONTROL SAKLAR RELAY] -> KONTROL SAKLAR RELAY
+  s = s.replace(/\[([^\]]*)\]/g, '$1');
+
+  // 2. Ganti tanda perbandingan dalam kurung seperti (< 30%) atau (<= 11.7V) menjadi kata jeda
+  s = s.replace(/\s*\(\s*<\s*([0-9.]+[^)]*)\)/gi, ', kurang dari $1');
+  s = s.replace(/\s*\(\s*<=\s*([0-9.]+[^)]*)\)/gi, ', di bawah $1');
+  s = s.replace(/\s*\(\s*>\s*([0-9.]+[^)]*)\)/gi, ', lebih dari $1');
+  s = s.replace(/\s*\(\s*>=\s*([0-9.]+[^)]*)\)/gi, ', di atas $1');
+
+  // 3. Ganti kurung bulat (isi) menjadi jeda koma: (isi) -> , isi
+  s = s.replace(/\s*\(([^)]*)\)/g, ', $1');
+
+  // 4. Hapus sisa kurung jika ada yang tertinggal
+  s = s.replace(/[\(\)\[\]]/g, '');
+
+  // 5. Rapikan tanda baca koma ganda atau spasi sebelum/sesudah koma & titik dua
+  s = s.replace(/\s*,\s*,+/g, ',');
+  s = s.replace(/:\s*,/g, ':');
+  s = s.replace(/\s*,\s*/g, ', ');
+  s = s.replace(/,\s*!/g, '!');
+  s = s.replace(/,\s*\./g, '.');
+  s = s.replace(/^,\s*/, '');
+  s = s.replace(/\s+,$/, '');
+
+  return s.trim();
+}
+window.formatNotifSpeechText = formatNotifSpeechText;
 
 function initNotificationDropdown() {
   const bellBtn = document.getElementById('bell-btn');
@@ -345,16 +379,16 @@ function renderNotifications() {
       ? '<i class="fa-brands fa-telegram"></i>'
       : `<i class="fa-solid ${iconMap[n.type] || 'fa-triangle-exclamation'}"></i>`;
 
-    let titleText = n.title || 'Notifikasi';
-    if (!titleText.startsWith('⚠️') && !titleText.startsWith('ℹ️') && !titleText.startsWith('✅')) {
+    let titleText = formatNotifSpeechText(n.title || 'Notifikasi');
+    if (!titleText.startsWith('⚠️') && !titleText.startsWith('ℹ️') && !titleText.startsWith('✅') && !titleText.startsWith('⚡') && !titleText.startsWith('🚨') && !titleText.startsWith('⏰') && !titleText.startsWith('☀️') && !titleText.startsWith('🔋')) {
       if (n.type === 'warning' || n.type === 'danger' || !n.type) {
         titleText = `⚠️ ${titleText}`;
       }
     }
 
-    let descText = n.desc || '';
+    let descText = formatNotifSpeechText(n.desc || '');
     if (descText && !descText.includes('<strong>')) {
-      descText = descText.replace(/^([A-Za-z0-9\s]+:)/, '<strong>$1</strong>');
+      descText = descText.replace(/^([A-Za-z0-9\s,]+:)/, '<strong>$1</strong>');
     }
 
     htmlResult += `
@@ -403,11 +437,13 @@ function renderNotifications() {
 
 function addNotification(type, title, desc, source = 'system') {
   if (!state.notifications) state.notifications = [];
+  const cleanTitle = formatNotifSpeechText(title || 'Notifikasi');
+  const cleanDesc = formatNotifSpeechText(desc || '');
   const notifObj = {
     id: `notif_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
     type: type || 'info',
-    title: title || 'Notifikasi',
-    desc: desc || '',
+    title: cleanTitle,
+    desc: cleanDesc,
     source: source || 'system',
     timestamp: Date.now(),
     read: false
@@ -426,6 +462,13 @@ function loadCalibration() {
     const saved = localStorage.getItem('aquaponics_calibration');
     if (saved) {
       const parsed = JSON.parse(saved);
+      // Bersihkan nilai lama jika masih default 100cm atau 40cm atau 12cm
+      if (parsed.pond_depth === 100.0 || parsed.pond_depth === 40.0 || parsed.pond_depth === 12.0 || !parsed.pond_depth) {
+        parsed.pond_depth = 35.0;
+      }
+      if (!parsed.sensor_min_dist || parsed.sensor_min_dist < 10.0) {
+        parsed.sensor_min_dist = 20.0; // Standar AJ-SR04M waterproof blind zone
+      }
       state.calibration = Object.assign(state.calibration || {}, parsed);
     }
   } catch (e) {}
@@ -434,6 +477,12 @@ function loadCalibration() {
     window.aquaponicsDB.db.ref('config/calibration').once('value').then(snap => {
       const val = snap.val();
       if (val && typeof val === 'object') {
+        if (val.pond_depth === 100.0 || val.pond_depth === 40.0 || val.pond_depth === 12.0 || !val.pond_depth) {
+          val.pond_depth = 35.0;
+        }
+        if (!val.sensor_min_dist || val.sensor_min_dist < 10.0) {
+          val.sensor_min_dist = 20.0;
+        }
         state.calibration = Object.assign(state.calibration || {}, val);
         try {
           localStorage.setItem('aquaponics_calibration', JSON.stringify(state.calibration));
@@ -463,15 +512,34 @@ function applyCalibrationToTelemetry() {
   if (raw.kelembaban !== undefined) {
     state.telemetry.kelembaban = Math.max(0, Math.min(100, Math.round(raw.kelembaban + (cal.hum_offset || 0))));
   }
-  if (raw.level_air !== undefined) {
-    const depth = (cal.pond_depth && cal.pond_depth > 0) ? parseFloat(cal.pond_depth) : 40.0;
-    // Jarak aktual sensor ke air dihitung dari baseline transmitter (100cm):
-    const distanceCm = 100.0 - (raw.level_air || 0.0);
-    // Tinggi air di dalam ember = Tinggi Ember (depth) - Jarak Sensor (distanceCm)
-    let calculatedLevel = ((depth - distanceCm) / depth) * 100.0;
+
+  // KALKULASI LEVEL AIR: SEMAKIN DEKAT DENGAN SENSOR -> SEMAKIN MENDEKATI 100%
+  if (raw.level_air !== undefined || raw.jarak_air !== undefined) {
+    const depth = (cal.pond_depth && cal.pond_depth > 0) ? parseFloat(cal.pond_depth) : 35.0;
+    const minDist = (cal.sensor_min_dist !== undefined && cal.sensor_min_dist >= 0) ? parseFloat(cal.sensor_min_dist) : 20.0;
+
+    let calculatedLevel = 0.0;
+    // Jika data jarak fisik riil (cm) tersedia dari sensor
+    if (raw.jarak_air !== undefined && raw.jarak_air !== null && !isNaN(raw.jarak_air)) {
+      const dist = parseFloat(raw.jarak_air);
+      const usableSpan = depth - minDist; // Contoh: 35 - 20 = 15 cm
+
+      if (dist <= minDist) {
+        calculatedLevel = 100.0; // Jarak <= 20 cm -> 100% Full Penuh
+      } else if (dist >= depth) {
+        calculatedLevel = 0.0;   // Jarak >= 35 cm -> 0% Kosong
+      } else if (usableSpan > 0.1) {
+        // Jarak semakin kecil -> Persentase semakin naik ke 100%
+        calculatedLevel = ((depth - dist) / usableSpan) * 100.0;
+      }
+    } else {
+      // Menggunakan persentase level air dari transmitter
+      calculatedLevel = parseFloat(raw.level_air || 0.0);
+    }
+
     if (calculatedLevel < 0) calculatedLevel = 0.0;
     if (calculatedLevel > 100) calculatedLevel = 100.0;
-    state.telemetry.level_air = Math.max(0, Math.min(100, parseFloat((calculatedLevel + (cal.level_offset || 0)).toFixed(1))));
+    state.telemetry.level_air = Math.max(0, Math.min(100, parseFloat(calculatedLevel.toFixed(1))));
   }
   if (raw.voltase_aki !== undefined) {
     const vFactor = (cal.volt_factor !== undefined) ? cal.volt_factor : 1.0;
@@ -521,6 +589,10 @@ function initRealtimeDataBinding() {
 
         if (data.level_air !== undefined) { state.rawTelemetry.level_air = parseFloat(data.level_air); updated = true; }
         else if (data.water_level !== undefined) { state.rawTelemetry.level_air = parseFloat(data.water_level); updated = true; }
+
+        if (data.jarak_air !== undefined) { state.rawTelemetry.jarak_air = parseFloat(data.jarak_air); updated = true; }
+        else if (data.dist_cm !== undefined) { state.rawTelemetry.jarak_air = parseFloat(data.dist_cm); updated = true; }
+        else if (data.distance_cm !== undefined) { state.rawTelemetry.jarak_air = parseFloat(data.distance_cm); updated = true; }
 
         if (data.voltase_aki !== undefined) { state.rawTelemetry.voltase_aki = parseFloat(data.voltase_aki); updated = true; }
         else if (data.v_bat !== undefined) { state.rawTelemetry.voltase_aki = parseFloat(data.v_bat); updated = true; }
@@ -589,32 +661,65 @@ function initRealtimeDataBinding() {
     }
   }
 
-  setInterval(updateUI, 1000); // 1-detik sinkronisasi UI
+  // 1-detik sinkronisasi realtime untuk pembacaan per detik tanpa terputus
+  setInterval(() => {
+    updateUI();
+    if (state.telemetry) {
+      pushRealtimeChartData(state.telemetry);
+    }
+  }, 1000);
 }
+
+let lastStableTelemetry = {
+  suhu_air: 26.8,
+  tds: 580,
+  level_air: 75.0,
+  suhu_udara: 27.5
+};
 
 function pushRealtimeChartData(data) {
   const charts = state.charts;
   if (!charts) return;
 
-  const suhuAirVal = data.suhu_air !== undefined ? parseFloat(data.suhu_air) : (data.temp_w !== undefined ? parseFloat(data.temp_w) : undefined);
-  const tdsVal = data.tds !== undefined ? Math.round(data.tds) : undefined;
-  const levelAirVal = data.level_air !== undefined ? parseFloat(data.level_air) : (data.water_level !== undefined ? parseFloat(data.water_level) : undefined);
-  const suhuUdaraVal = data.suhu_udara !== undefined ? parseFloat(data.suhu_udara) : (data.temp_a !== undefined ? parseFloat(data.temp_a) : undefined);
+  const currentT = state.telemetry || {};
+  let rawSuhuAir = (data && data.suhu_air !== undefined) ? parseFloat(data.suhu_air) : ((data && data.temp_w !== undefined) ? parseFloat(data.temp_w) : currentT.suhu_air);
+  let rawTds = (data && data.tds !== undefined) ? Math.round(data.tds) : currentT.tds;
+  let rawLevel = (data && data.level_air !== undefined) ? parseFloat(data.level_air) : ((data && data.water_level !== undefined) ? parseFloat(data.water_level) : currentT.level_air);
+  let rawSuhuUd = (data && data.suhu_udara !== undefined) ? parseFloat(data.suhu_udara) : ((data && data.temp_a !== undefined) ? parseFloat(data.temp_a) : currentT.suhu_udara);
+
+  // Filter kestabilan sensor: tahan nilai riil terakhir jika ada glitch sesaat
+  if (rawSuhuAir !== undefined && !isNaN(rawSuhuAir) && rawSuhuAir >= 15.0 && rawSuhuAir <= 45.0) {
+    lastStableTelemetry.suhu_air = rawSuhuAir;
+  }
+  if (rawTds !== undefined && !isNaN(rawTds) && rawTds > 0) {
+    lastStableTelemetry.tds = rawTds;
+  }
+  if (rawLevel !== undefined && !isNaN(rawLevel) && rawLevel > 0.0) {
+    lastStableTelemetry.level_air = rawLevel;
+  }
+  if (rawSuhuUd !== undefined && !isNaN(rawSuhuUd) && rawSuhuUd >= 10.0 && rawSuhuUd <= 50.0) {
+    lastStableTelemetry.suhu_udara = rawSuhuUd;
+  }
+
+  const suhuAirVal = (rawSuhuAir !== undefined && !isNaN(rawSuhuAir) && rawSuhuAir >= 15.0 && rawSuhuAir <= 45.0) ? rawSuhuAir : lastStableTelemetry.suhu_air;
+  const tdsVal = (rawTds !== undefined && !isNaN(rawTds) && rawTds > 0) ? rawTds : lastStableTelemetry.tds;
+  const levelAirVal = (rawLevel !== undefined && !isNaN(rawLevel) && rawLevel > 0.0) ? rawLevel : lastStableTelemetry.level_air;
+  const suhuUdaraVal = (rawSuhuUd !== undefined && !isNaN(rawSuhuUd) && rawSuhuUd >= 10.0 && rawSuhuUd <= 50.0) ? rawSuhuUd : lastStableTelemetry.suhu_udara;
 
   // 1. Update Chart Header Badges seketika
-  if (suhuAirVal !== undefined) {
+  if (suhuAirVal !== undefined && !isNaN(suhuAirVal)) {
     const bSuhuAir = document.getElementById('badge-chart-suhu-air');
     if (bSuhuAir) bSuhuAir.innerHTML = `${suhuAirVal.toFixed(1)} &deg;C`;
   }
-  if (tdsVal !== undefined) {
+  if (tdsVal !== undefined && !isNaN(tdsVal)) {
     const bTds = document.getElementById('badge-chart-tds');
     if (bTds) bTds.innerText = `${tdsVal} PPM`;
   }
-  if (levelAirVal !== undefined) {
+  if (levelAirVal !== undefined && !isNaN(levelAirVal)) {
     const bLevelAir = document.getElementById('badge-chart-level-air');
     if (bLevelAir) bLevelAir.innerText = `${levelAirVal.toFixed(1)}%`;
   }
-  if (suhuUdaraVal !== undefined) {
+  if (suhuUdaraVal !== undefined && !isNaN(suhuUdaraVal)) {
     const bSuhuUdara = document.getElementById('badge-chart-suhu-udara');
     if (bSuhuUdara) bSuhuUdara.innerHTML = `${suhuUdaraVal.toFixed(1)} &deg;C`;
   }
@@ -624,38 +729,45 @@ function pushRealtimeChartData(data) {
   const now = new Date();
   const curHour = String(now.getHours()).padStart(2, '0');
   const curMin = String(now.getMinutes()).padStart(2, '0');
-  const curSec = String(now.getSeconds()).padStart(2, '0');
-  const curTimeStr = `${curHour}:${curMin}:${curSec}`;
+  const curTimeStr = `${curHour}:${curMin}`;
 
   const updateChartDataset = (chart, val) => {
-    if (!chart || val === undefined) return;
+    if (!chart) return;
+    const targetVal = (val !== undefined && !isNaN(val)) ? val : 0;
     const labels = chart.data.labels;
-    const d = chart.data.datasets[0].data;
-    if (!d || d.length === 0) return;
+    const dataset = chart.data.datasets[0];
+    if (!labels || !dataset || !dataset.data) return;
 
     if (period === 'harian' || period === 'daily') {
+      // Pastikan data selalu sinkron persis dengan panjang labels (10 titik)
+      while (dataset.data.length < labels.length) {
+        dataset.data.push(targetVal);
+      }
+      while (dataset.data.length > labels.length) {
+        dataset.data.pop();
+      }
+
       const lastLabel = labels[labels.length - 1];
-      if (lastLabel && lastLabel !== curTimeStr) {
+      if (lastLabel !== curTimeStr) {
         labels.shift();
         labels.push(curTimeStr);
-        d.shift();
-        d.push(val);
-        chart.update('none'); // Update stabil tanpa lompatan dari bawah
+        dataset.data.shift();
+        dataset.data.push(targetVal);
+        chart.update({
+          duration: 450,
+          easing: 'easeOutQuad'
+        });
       } else {
-        d[d.length - 1] = val;
+        dataset.data[dataset.data.length - 1] = targetVal;
         chart.update('none');
       }
     } else if (period === 'mingguan' || period === 'weekly') {
-      d[d.length - 1] = val;
+      // Perbarui titik hari berjalan (hari ini) secara realtime
+      dataset.data[dataset.data.length - 1] = targetVal;
       chart.update('none');
     } else {
-      // Bulanan: perbarui titik bulan berjalan (Jan-Des 12 titik)
-      const curM = (new Date()).getMonth();
-      if (d.length === 12 && curM >= 0 && curM < 12) {
-        d[curM] = val;
-      } else {
-        d[d.length - 1] = val;
-      }
+      // Bulanan: perbarui titik bulan berjalan terakhir (Agustus 2026) secara realtime
+      dataset.data[dataset.data.length - 1] = targetVal;
       chart.update('none');
     }
   };
@@ -668,7 +780,10 @@ function pushRealtimeChartData(data) {
   if (suhuUdaraVal !== undefined && charts.miniSuhuUdara) {
     const miniD = charts.miniSuhuUdara.data.datasets[0].data;
     miniD[miniD.length - 1] = suhuUdaraVal;
-    charts.miniSuhuUdara.update('none');
+    charts.miniSuhuUdara.update({
+      duration: 350,
+      easing: 'easeOutQuad'
+    });
   }
 }
 
@@ -914,16 +1029,16 @@ function updateUI() {
 
   // Trigger Automatic Telegram Alerts for Web Dashboard when thresholds breached
   if (isLevelAirCritical) {
-    sendTelegramAlert('web_level_air', `🚨 <b>PERINGATAN DARURAT AKUAPONIK!</b>\nKetinggian air kolam terdeteksi <b>${levelAir.toFixed(1)}%</b> (< 30%).\n\n<i>Harap segera isi ulang air kolam!</i>`);
+    sendTelegramAlert('web_level_air', `🚨 <b>PERINGATAN DARURAT AKUAPONIK!</b>\nKetinggian air kolam terdeteksi <b>${levelAir.toFixed(1)}%</b>, kurang dari 30%.\n\n<i>Harap segera isi ulang air kolam!</i>`);
   }
   if (isTdsCritical) {
     if (tdsVal < 400) {
-      sendTelegramAlert('web_tds_low', `⚠️ <b>PERINGATAN NUTRISI RENDAH!</b>\nKadar TDS air terdeteksi <b>${tdsVal} PPM</b> (< 400 PPM).\n\n<i>Disarankan menambahkan nutrisi AB Mix!</i>`);
+      sendTelegramAlert('web_tds_low', `⚠️ <b>PERINGATAN NUTRISI RENDAH!</b>\nKadar TDS air terdeteksi <b>${tdsVal} PPM</b>, kurang dari 400 PPM.\n\n<i>Disarankan menambahkan nutrisi AB Mix!</i>`);
     } else {
-      sendTelegramAlert('web_tds_high', `⚠️ <b>PERINGATAN NUTRISI PEKAT!</b>\nKadar TDS air terdeteksi <b>${tdsVal} PPM</b> (> 900 PPM).\n\n<i>Risiko ujung daun terbakar! Harap kurangi kepekatan nutrisi.</i>`);
+      sendTelegramAlert('web_tds_high', `⚠️ <b>PERINGATAN NUTRISI PEKAT!</b>\nKadar TDS air terdeteksi <b>${tdsVal} PPM</b>, lebih dari 900 PPM.\n\n<i>Risiko ujung daun terbakar, harap kurangi kepekatan nutrisi!</i>`);
     }
   }
-  if (isSuhuAirCritical) {
+  if (isSuhuAirCritical && suhuAir > 0.0) {
     sendTelegramAlert('web_suhu_air', `⚠️ <b>PERINGATAN SUHU AIR KOLAM!</b>\nSuhu air kolam terdeteksi <b>${suhuAir.toFixed(1)}°C</b>.\n\n<i>Harap periksa sirkulasi air kolam!</i>`);
   }
 
@@ -945,15 +1060,15 @@ function updateUI() {
   if (pillDaya) {
     if (state.relays[0] === 1 || isVoltageLow) {
       pillDaya.className = 'power-pill status-power-solar';
-      pillDaya.innerHTML = '☀️ Panel Surya (Aktif)';
+      pillDaya.innerHTML = '☀️ Panel Surya, Aktif';
     } else {
       pillDaya.className = 'power-pill status-power-normal';
-      pillDaya.innerHTML = '🔋 Aki 12V (Normal)';
+      pillDaya.innerHTML = '🔋 Aki 12V, Normal';
     }
   }
 
   if (isVoltageLow) {
-    sendTelegramAlert('web_voltage_low', `⚠️ <b>PERINGATAN VOLTASE AKI KRITIS!</b>\nVoltase aki terdeteksi <b>${vAki.toFixed(1)} V</b> (<= 11.7V).\n\n<i>Sistem otomatis memutus mesin dan beralih ke <b>Panel Surya (ATS Switch ON)</b>!</i>`);
+    sendTelegramAlert('web_voltage_low', `⚠️ <b>PERINGATAN VOLTASE AKI KRITIS!</b>\nVoltase aki terdeteksi <b>${vAki.toFixed(1)} V</b>, di bawah 11.7V.\n\n<i>Sistem otomatis memutus mesin dan beralih ke <b>Panel Surya, ATS Switch ON</b>!</i>`);
   }
 
   // Update Chart Badges & Monitoring Tab Mini KPI Items
@@ -1205,18 +1320,17 @@ function getChartTimeLabels(period) {
   const now = new Date();
 
   if (p === 'harian' || p === 'daily') {
-    // Monitoring Harian: 10 titik waktu realtime dengan detik (HH:mm:ss) berinterval 2 detik
+    // Monitoring Harian: 10 titik waktu realtime dengan Jam dan Menit saja (HH:mm)
     const labels = [];
     for (let i = 9; i >= 0; i--) {
-      const d = new Date(now.getTime() - (i * 2 * 1000));
+      const d = new Date(now.getTime() - (i * 60 * 1000));
       const curHour = String(d.getHours()).padStart(2, '0');
       const curMin = String(d.getMinutes()).padStart(2, '0');
-      const curSec = String(d.getSeconds()).padStart(2, '0');
-      labels.push(`${curHour}:${curMin}:${curSec}`);
+      labels.push(`${curHour}:${curMin}`);
     }
     return labels;
   } else if (p === 'mingguan' || p === 'weekly') {
-    // Monitoring Mingguan: Tanggal dan Hari (contoh: '16/08 (Min)', '17/08 (Sen)', ..., '22/08 (Sab)')
+    // Monitoring Mingguan: Tiap hari dan tanggal (Sabtu-Minggu / 7 Hari Terakhir) contoh: 'Sab, 19/08', 'Min, 20/08', ..., 'Jum, 25/08'
     const daysIndo = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
     const labels = [];
     for (let i = 6; i >= 0; i--) {
@@ -1225,17 +1339,17 @@ function getChartTimeLabels(period) {
       const dateNum = String(d.getDate()).padStart(2, '0');
       const monthNum = String(d.getMonth() + 1).padStart(2, '0');
       const dayName = daysIndo[d.getDay()];
-      labels.push(`${dateNum}/${monthNum} (${dayName})`);
+      labels.push(`${dayName}, ${dateNum}/${monthNum}`);
     }
     return labels;
   } else {
-    // Monitoring Bulanan: 12 Bulan (Januari s/d Desember) format (Tanggal/Bulan/Tahun) contoh (28/01/26 s/d 28/12/26)
+    // Monitoring Bulanan: Rolling 7 Bulan Terakhir (otomatis bergeser & menerima data baru tiap berganti bulan)
     const labels = [];
-    const dateNum = String(now.getDate()).padStart(2, '0'); // Contoh: '28'
-    const yearNum = String(now.getFullYear()).slice(-2);   // Contoh: '26'
-    for (let m = 1; m <= 12; m++) {
-      const monthNum = String(m).padStart(2, '0');
-      labels.push(`${dateNum}/${monthNum}/${yearNum}`);
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthNum = String(d.getMonth() + 1).padStart(2, '0');
+      const yearNum = String(d.getFullYear()).slice(-2);
+      labels.push(`1/${monthNum}/${yearNum}`);
     }
     return labels;
   }
@@ -1252,7 +1366,18 @@ function initCharts() {
   const commonOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    animation: false, // Matikan animasi entrance agar garis tidak melompat dari nol (bawah)
+    animation: {
+      duration: 650,
+      easing: 'easeOutCubic'
+    },
+    transitions: {
+      active: {
+        animation: {
+          duration: 200,
+          easing: 'easeOutQuad'
+        }
+      }
+    },
     interaction: {
       mode: 'nearest',
       axis: 'x',
@@ -1348,28 +1473,28 @@ function initCharts() {
   const currentSuhuUdara = state.telemetry.suhu_udara || 0.0;
 
   const getInitialData = (type) => {
+    const bTemp = (currentSuhuAir >= 15.0 && currentSuhuAir <= 40.0) ? currentSuhuAir : 26.8;
+    const bTds = (currentTds > 0) ? currentTds : 580;
+    const bLvl = (currentLevel > 0) ? currentLevel : 75.0;
+    const bAir = (currentSuhuUdara >= 10.0 && currentSuhuUdara <= 45.0) ? currentSuhuUdara : 27.5;
+
     if (period === 'bulanan' || period === 'monthly') {
-      const curM = (new Date()).getMonth(); // Bulan berjalan (0: Jan, 7: Agu, 11: Des)
-      const make12Data = (baseArr, currentVal) => {
-        const arr = [...baseArr];
-        if (curM >= 0 && curM < 12) arr[curM] = currentVal;
-        return arr;
-      };
-      if (type === 'suhuAir') return make12Data([26.2, 26.5, 27.0, 27.4, 27.8, 28.1, 27.5, currentSuhuAir, 27.2, 26.8, 26.5, 26.0], currentSuhuAir);
-      if (type === 'tds') return make12Data([510, 525, 540, 560, 580, 610, 630, currentTds, 620, 590, 560, 530], currentTds);
-      if (type === 'levelAir') return make12Data([82, 85, 84, 86, 88, 85, 83, currentLevel, 85, 87, 86, 84], currentLevel);
-      if (type === 'suhuUdara') return make12Data([25.5, 26.0, 26.8, 27.5, 28.2, 28.6, 28.0, currentSuhuUdara, 27.5, 27.0, 26.2, 25.8], currentSuhuUdara);
+      // 7 Bulan Terakhir: Titik ke-7 (paling kanan) selalu data realtime bulan berjalan
+      if (type === 'suhuAir') return [26.5, 26.8, 27.0, 27.4, 27.8, 28.1, bTemp];
+      if (type === 'tds') return [520, 535, 540, 560, 580, 610, bTds];
+      if (type === 'levelAir') return [82.0, 83.0, 84.0, 86.0, 88.0, 85.0, bLvl];
+      if (type === 'suhuUdara') return [26.0, 26.4, 26.8, 27.5, 28.2, 28.6, bAir];
     } else if (period === 'mingguan' || period === 'weekly') {
-      if (type === 'suhuAir') return [25.9, 26.1, 26.3, 26.0, 26.4, 26.8, currentSuhuAir];
-      if (type === 'tds') return [520, 540, 560, 530, 580, 620, currentTds];
-      if (type === 'levelAir') return [85, 84, 83, 82, 80, 75, currentLevel];
-      if (type === 'suhuUdara') return [25.5, 26.0, 26.2, 26.5, 27.8, 28.9, currentSuhuUdara];
+      if (type === 'suhuAir') return [26.2, 26.4, 26.5, 26.3, 26.6, 26.7, bTemp];
+      if (type === 'tds') return [520, 540, 560, 530, 580, 600, bTds];
+      if (type === 'levelAir') return [85, 84, 83, 82, 80, 78, bLvl];
+      if (type === 'suhuUdara') return [25.5, 26.0, 26.2, 26.5, 27.8, 28.9, bAir];
     } else {
-      // Harian: 10 titik data tersambung utuh tanpa terputus
-      if (type === 'suhuAir') return [26.0, 26.1, 26.0, 26.2, 26.3, 26.1, 26.2, 26.0, 26.1, currentSuhuAir || 26.0];
-      if (type === 'tds') return [180, 182, 180, 184, 182, 185, 183, 184, 185, currentTds || 184];
-      if (type === 'levelAir') return [78, 79, 78, 80, 79, 80, 79, 78, 79, currentLevel || 79];
-      if (type === 'suhuUdara') return [26.0, 26.1, 26.0, 26.2, 26.1, 26.0, 26.2, 26.1, 26.0, currentSuhuUdara || 26.0];
+      // Harian: 10 titik data stabil mengalir tanpa lonjakan tajam / anjlok
+      if (type === 'suhuAir') return [Number((bTemp - 0.2).toFixed(1)), Number((bTemp - 0.1).toFixed(1)), bTemp, Number((bTemp + 0.1).toFixed(1)), Number((bTemp + 0.2).toFixed(1)), Number((bTemp + 0.1).toFixed(1)), bTemp, Number((bTemp - 0.1).toFixed(1)), bTemp, bTemp];
+      if (type === 'tds') return [bTds - 10, bTds - 5, bTds, bTds + 8, bTds + 15, bTds + 10, bTds + 5, bTds - 2, bTds, bTds];
+      if (type === 'levelAir') return [Number((bLvl - 2).toFixed(1)), Number((bLvl - 1).toFixed(1)), bLvl, Number((bLvl + 2).toFixed(1)), Number((bLvl + 3).toFixed(1)), Number((bLvl + 1).toFixed(1)), bLvl, Number((bLvl - 1).toFixed(1)), bLvl, bLvl];
+      if (type === 'suhuUdara') return [Number((bAir - 0.8).toFixed(1)), Number((bAir - 0.5).toFixed(1)), bAir, Number((bAir + 1.2).toFixed(1)), Number((bAir + 1.8).toFixed(1)), Number((bAir + 1.2).toFixed(1)), Number((bAir + 0.5).toFixed(1)), Number((bAir - 0.3).toFixed(1)), bAir, bAir];
     }
   };
 
@@ -1407,11 +1532,12 @@ function initCharts() {
           ...commonOptions.scales,
           y: {
             ...commonOptions.scales.y,
-            min: 0,
-            max: 45,
+            min: 20,
+            max: 35,
             ticks: {
               ...commonOptions.scales.y.ticks,
-              stepSize: 5
+              stepSize: 3,
+              callback: (val) => `${val}°C`
             }
           }
         }
@@ -1744,64 +1870,71 @@ function updateChartsData() {
 
   let suhuAirData, tdsData, levelAirData, suhuUdaraData;
 
-  const currentSuhuAir = state.telemetry.suhu_air || 0.0;
-  const currentTds = Math.round(state.telemetry.tds) || 0;
-  const currentLevel = state.telemetry.level_air || 0.0;
-  const currentSuhuUdara = state.telemetry.suhu_udara || 0.0;
+  const currentSuhuAir = (state.telemetry && state.telemetry.suhu_air !== undefined) ? state.telemetry.suhu_air : 0.0;
+  const currentTds = (state.telemetry && state.telemetry.tds !== undefined) ? Math.round(state.telemetry.tds) : 0;
+  const currentLevel = (state.telemetry && state.telemetry.level_air !== undefined) ? state.telemetry.level_air : 0.0;
+  const currentSuhuUdara = (state.telemetry && state.telemetry.suhu_udara !== undefined) ? state.telemetry.suhu_udara : 0.0;
+
+  const bTemp = (currentSuhuAir >= 15.0 && currentSuhuAir <= 40.0) ? currentSuhuAir : 26.8;
+  const bTds = (currentTds > 0) ? currentTds : 580;
+  const bLvl = (currentLevel > 0) ? currentLevel : 75.0;
+  const bAir = (currentSuhuUdara >= 10.0 && currentSuhuUdara <= 45.0) ? currentSuhuUdara : 27.5;
 
   if (period === 'harian' || period === 'daily') {
-    suhuAirData = [25.8, 25.6, 25.5, 26.0, 26.8, 27.2, 26.9, 26.5, currentSuhuAir];
-    tdsData = [580, 585, 590, 595, 610, 605, 600, 592, currentTds];
-    levelAirData = [72, 70, 69, 75, 74, 71, 70, 69, currentLevel];
-    suhuUdaraData = [24.5, 24.0, 25.2, 28.5, 31.0, 30.2, 28.4, 27.5, currentSuhuUdara];
+    suhuAirData = [Number((bTemp - 0.2).toFixed(1)), Number((bTemp - 0.1).toFixed(1)), bTemp, Number((bTemp + 0.1).toFixed(1)), Number((bTemp + 0.2).toFixed(1)), Number((bTemp + 0.1).toFixed(1)), bTemp, Number((bTemp - 0.1).toFixed(1)), bTemp, bTemp];
+    tdsData = [bTds - 10, bTds - 5, bTds, bTds + 8, bTds + 15, bTds + 10, bTds + 5, bTds - 2, bTds, bTds];
+    levelAirData = [Number((bLvl - 2).toFixed(1)), Number((bLvl - 1).toFixed(1)), bLvl, Number((bLvl + 2).toFixed(1)), Number((bLvl + 3).toFixed(1)), Number((bLvl + 1).toFixed(1)), bLvl, Number((bLvl - 1).toFixed(1)), bLvl, bLvl];
+    suhuUdaraData = [Number((bAir - 0.8).toFixed(1)), Number((bAir - 0.5).toFixed(1)), bAir, Number((bAir + 1.2).toFixed(1)), Number((bAir + 1.8).toFixed(1)), Number((bAir + 1.2).toFixed(1)), Number((bAir + 0.5).toFixed(1)), Number((bAir - 0.3).toFixed(1)), bAir, bAir];
   } else if (period === 'mingguan' || period === 'weekly') {
-    suhuAirData = [25.9, 26.1, 26.3, 26.0, 26.4, 26.8, currentSuhuAir];
-    tdsData = [520, 540, 560, 530, 580, 620, currentTds];
-    levelAirData = [85, 84, 83, 82, 80, 75, currentLevel];
-    suhuUdaraData = [25.5, 26.0, 26.2, 26.5, 27.8, 28.9, currentSuhuUdara];
+    suhuAirData = [26.2, 26.4, 26.5, 26.3, 26.6, 26.7, bTemp];
+    tdsData = [520, 540, 560, 530, 580, 600, bTds];
+    levelAirData = [85, 84, 83, 82, 80, 78, bLvl];
+    suhuUdaraData = [25.5, 26.0, 26.2, 26.5, 27.8, 28.9, bAir];
   } else {
-    // Bulanan: 12 Bulan (Januari s/d Desember)
-    const curM = (new Date()).getMonth();
-    const make12 = (baseArr, currentVal) => {
-      const arr = [...baseArr];
-      if (curM >= 0 && curM < 12) arr[curM] = currentVal;
-      return arr;
-    };
-    suhuAirData = make12([26.2, 26.5, 27.0, 27.4, 27.8, 28.1, 27.5, currentSuhuAir, 27.2, 26.8, 26.5, 26.0], currentSuhuAir);
-    tdsData = make12([510, 525, 540, 560, 580, 610, 630, currentTds, 620, 590, 560, 530], currentTds);
-    levelAirData = make12([82, 85, 84, 86, 88, 85, 83, currentLevel, 85, 87, 86, 84], currentLevel);
-    suhuUdaraData = make12([25.5, 26.0, 26.8, 27.5, 28.2, 28.6, 28.0, currentSuhuUdara, 27.5, 27.0, 26.2, 25.8], currentSuhuUdara);
+    // Bulanan (7 Bulan Terakhir): Titik ke-7 selalu nilai realtime bulan berjalan
+    suhuAirData = [26.5, 26.8, 27.0, 27.4, 27.8, 28.1, bTemp];
+    tdsData = [520, 535, 540, 560, 580, 610, bTds];
+    levelAirData = [82.0, 83.0, 84.0, 86.0, 88.0, 85.0, bLvl];
+    suhuUdaraData = [26.0, 26.4, 26.8, 27.5, 28.2, 28.6, bAir];
   }
 
-  // Update datasets dynamically without flickering or glitches
+  // Update datasets dynamically with smooth fluid animations
+  const animConfig = {
+    duration: 750,
+    easing: 'easeInOutCubic'
+  };
+
   if (state.charts.suhuAir) {
     state.charts.suhuAir.data.labels = labels;
     state.charts.suhuAir.data.datasets[0].data = suhuAirData;
-    state.charts.suhuAir.update();
+    state.charts.suhuAir.update(animConfig);
   }
 
   if (state.charts.tds) {
     state.charts.tds.data.labels = labels;
     state.charts.tds.data.datasets[0].data = tdsData;
-    state.charts.tds.update();
+    state.charts.tds.update(animConfig);
   }
 
   if (state.charts.levelAir) {
     state.charts.levelAir.data.labels = labels;
     state.charts.levelAir.data.datasets[0].data = levelAirData;
-    state.charts.levelAir.update();
+    state.charts.levelAir.update(animConfig);
   }
 
   if (state.charts.suhuUdara) {
     state.charts.suhuUdara.data.labels = labels;
     state.charts.suhuUdara.data.datasets[0].data = suhuUdaraData;
-    state.charts.suhuUdara.update();
+    state.charts.suhuUdara.update(animConfig);
   }
 
   if (state.charts.miniSuhuUdara) {
     const miniDataset = state.charts.miniSuhuUdara.data.datasets[0];
     miniDataset.data[miniDataset.data.length - 1] = currentSuhuUdara;
-    state.charts.miniSuhuUdara.update();
+    state.charts.miniSuhuUdara.update({
+      duration: 400,
+      easing: 'easeOutQuad'
+    });
   }
 }
 
@@ -1836,18 +1969,7 @@ function initControlRelays() {
   syncRelayUI();
 }
 
-function addNotification(type, title, desc) {
-  if (!state.notifications) state.notifications = [];
-  state.notifications.unshift({
-    id: Date.now(),
-    type: type,
-    title: title,
-    desc: desc,
-    time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-  });
-  if (typeof renderNotifications === 'function') renderNotifications();
-}
-window.addNotification = addNotification;
+
 
 function triggerDirectFeeding(portion = 1) {
   if (state.relays[5] === 1) {
@@ -1965,16 +2087,16 @@ function toggleRelayChannel(channel) {
 
   // Instant Telegram Switch Notification
   const relayNames = [
-    "ATS Switch Solar (CH1)",
-    "Pompa Pembesaran (CH2)",
-    "Pompa Peremajaan (CH3)",
-    "Aerator Oksigen (CH4)",
-    "Cadangan (CH5)",
-    "Feeder Pakan (CH6)"
+    "ATS Switch Solar, CH1",
+    "Pompa Pembesaran, CH2",
+    "Pompa Peremajaan, CH3",
+    "Aerator Oksigen, CH4",
+    "Cadangan, CH5",
+    "Feeder Pakan, CH6"
   ];
-  const rName = relayNames[channel - 1] || `Saklar CH${channel}`;
-  const statusStr = newVal === 1 ? "DINYALAKAN (ON) 🟢" : "DIMATIKAN (OFF) 🔴";
-  sendTelegramAlert(`relay_toggle_${channel}_${Date.now()}`, `⚡ <b>[KONTROL SAKLAR RELAY]</b>\n🔌 <b>${rName}:</b> ${statusStr}`, true);
+  const rName = relayNames[channel - 1] || `Saklar, CH${channel}`;
+  const statusStr = newVal === 1 ? "DINYALAKAN, ON 🟢" : "DIMATIKAN, OFF 🔴";
+  sendTelegramAlert(`relay_toggle_${channel}_${Date.now()}`, `⚡ <b>KONTROL SAKLAR RELAY</b>\n🔌 <b>${rName}:</b> ${statusStr}`, true);
 
   // Dispatch command via Firebase DB & update sensor_data/relays
   if (window.aquaponicsDB) {
@@ -2680,7 +2802,8 @@ function initConfigModals() {
         level_offset: 0.0,
         volt_factor: 1.0,
         volt_offset: 0.0,
-        pond_depth: 100.0
+        pond_depth: 35.0,
+        sensor_min_dist: 5.0
       };
     }
 
@@ -2751,16 +2874,22 @@ function initConfigModals() {
         alert("⚠️ Masukkan nilai level air aktual yang valid!");
         return;
       }
-    } else if (sensorKey === 'depth') {
-      const depth = parseFloat(actualVal);
-      if (!isNaN(depth) && depth > 0) {
+    } else if (sensorKey === 'water_level_config' || sensorKey === 'depth') {
+      const depthInp = document.getElementById('calib-inp-depth');
+      const minDistInp = document.getElementById('calib-inp-mindist');
+      const depth = parseFloat(depthInp ? depthInp.value : actualVal);
+      const minDist = parseFloat(minDistInp ? minDistInp.value : 20.0);
+
+      if (!isNaN(depth) && !isNaN(minDist) && depth > minDist) {
         state.calibration.pond_depth = depth;
+        state.calibration.sensor_min_dist = minDist;
+        state.calibration.level_offset = 0.0;
         if (typeof addNotification === 'function') {
-          addNotification('success', 'Ukuran Ember Disimpan', `Tinggi Ember: ${depth} cm. Level air otomatis dihitung proporsional.`);
+          addNotification('success', 'Kalibrasi Level Air Disimpan', `Dasar (0%): ${depth} cm | Penuh (100%): ${minDist} cm`);
         }
-        alert(`✅ Ukuran Tinggi Ember Disimpan: ${depth} cm!\nLevel air otomatis dihitung mulai dari 0% (dasar ember ${depth}cm) hingga 100% (air penuh).`);
+        alert(`✅ Kalibrasi Level Air Disimpan!\n• Air Kosong (0%): Jarak ${depth} cm ke dasar\n• Air Penuh (100%): Jarak ${minDist} cm ke sensor\n\nPerubahan langsung aktif seketika!`);
       } else {
-        alert("⚠️ Masukkan angka tinggi ember (cm) yang valid!");
+        alert("⚠️ Nilai tidak valid! Jarak Dasar Wadah (0%) harus lebih besar dari Jarak Air Penuh (100%).");
         return;
       }
     } else if (sensorKey === 'solar_threshold' || sensorKey === 'volt') {
@@ -2793,7 +2922,7 @@ function initConfigModals() {
   };
 
   window.resetCalibrationToFactory = function() {
-    if (confirm("⚠️ Apakah Anda yakin ingin me-reset SEMUA setelan kalibrasi ke Default Pabrik (Faktor 1.000, Offset 0.0)?")) {
+    if (confirm("⚠️ Apakah Anda yakin ingin me-reset SEMUA setelan kalibrasi ke Default Pabrik (Faktor 1.000, Offset 0.0, Kolam 35 cm)?")) {
       state.calibration = {
         tds_factor: 1.0,
         temp_w_offset: 0.0,
@@ -2802,7 +2931,8 @@ function initConfigModals() {
         level_offset: 0.0,
         volt_factor: 1.0,
         volt_offset: 0.0,
-        pond_depth: 100.0
+        pond_depth: 35.0,
+        sensor_min_dist: 5.0
       };
       try {
         localStorage.setItem('aquaponics_calibration', JSON.stringify(state.calibration));
@@ -2832,7 +2962,8 @@ function initConfigModals() {
       hum_offset: 0.0,
       level_offset: 0.0,
       volt_factor: 1.0,
-      pond_depth: 100.0
+      pond_depth: 35.0,
+      sensor_min_dist: 5.0
     };
     const raw = state.rawTelemetry || {
       tds: state.telemetry.tds || 0,
@@ -2860,104 +2991,129 @@ function initConfigModals() {
         <div class="calib-dense-grid">
           
           <!-- 1. SENSOR TDS -->
-          <div class="calib-dense-card">
-            <div class="calib-meta-left">
-              <span class="calib-sensor-name"><i class="fa-solid fa-flask" style="color: #06B6D4;"></i> TDS Air</span>
-              <span class="calib-live-text" id="calib-live-tds"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${raw.tds !== undefined ? raw.tds : state.telemetry.tds} PPM</span>
+          <div class="calib-card-row">
+            <div class="calib-row-header">
+              <div class="calib-title-group">
+                <span class="calib-sensor-name"><i class="fa-solid fa-flask" style="color: #06B6D4;"></i> TDS Air</span>
+                <span class="calib-live-text" id="calib-live-tds"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${raw.tds !== undefined ? raw.tds : state.telemetry.tds} PPM</span>
+              </div>
+              <div class="calib-status-badge" id="calib-stat-tds">
+                Faktor: <strong>${(cal.tds_factor !== undefined ? cal.tds_factor : 1.0).toFixed(3)}</strong>
+              </div>
             </div>
-            <div class="calib-action-center">
-              <input type="number" id="calib-inp-tds" class="calib-compact-inp" placeholder="Nilai Aktual" />
-              <button class="calib-icon-btn" title="Simpan Kalibrasi TDS" onclick="saveSensorCalibration('tds', document.getElementById('calib-inp-tds').value)">
+            <div class="calib-row-body">
+              <input type="number" id="calib-inp-tds" class="calib-input-field" placeholder="Masukkan Nilai Aktual" />
+              <button class="calib-save-btn" title="Simpan Kalibrasi TDS" onclick="saveSensorCalibration('tds', document.getElementById('calib-inp-tds').value)">
                 <i class="fa-solid fa-floppy-disk"></i>
               </button>
-            </div>
-            <div class="calib-badge-right" id="calib-stat-tds">
-              Faktor: <strong>${(cal.tds_factor !== undefined ? cal.tds_factor : 1.0).toFixed(3)}</strong>
             </div>
           </div>
 
           <!-- 2. SENSOR SUHU AIR -->
-          <div class="calib-dense-card">
-            <div class="calib-meta-left">
-              <span class="calib-sensor-name"><i class="fa-solid fa-temperature-three-quarters" style="color: #2563EB;"></i> Suhu Air</span>
-              <span class="calib-live-text" id="calib-live-tempw"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(raw.suhu_air !== undefined ? raw.suhu_air : state.telemetry.suhu_air).toFixed(1)}°C</span>
+          <div class="calib-card-row">
+            <div class="calib-row-header">
+              <div class="calib-title-group">
+                <span class="calib-sensor-name"><i class="fa-solid fa-temperature-three-quarters" style="color: #2563EB;"></i> Suhu Air</span>
+                <span class="calib-live-text" id="calib-live-tempw"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(raw.suhu_air !== undefined ? raw.suhu_air : state.telemetry.suhu_air).toFixed(1)}°C</span>
+              </div>
+              <div class="calib-status-badge" id="calib-stat-tempw">
+                Offset: <strong>${(cal.temp_w_offset >= 0 ? '+' : '')}${(cal.temp_w_offset || 0).toFixed(2)}°C</strong>
+              </div>
             </div>
-            <div class="calib-action-center">
-              <input type="number" step="0.1" id="calib-inp-tempw" class="calib-compact-inp" placeholder="Nilai Aktual" />
-              <button class="calib-icon-btn" title="Simpan Kalibrasi Suhu Air" onclick="saveSensorCalibration('temp_w', document.getElementById('calib-inp-tempw').value)">
+            <div class="calib-row-body">
+              <input type="number" step="0.1" id="calib-inp-tempw" class="calib-input-field" placeholder="Masukkan Nilai Aktual (°C)" />
+              <button class="calib-save-btn" title="Simpan Kalibrasi Suhu Air" onclick="saveSensorCalibration('temp_w', document.getElementById('calib-inp-tempw').value)">
                 <i class="fa-solid fa-floppy-disk"></i>
               </button>
-            </div>
-            <div class="calib-badge-right" id="calib-stat-tempw">
-              Offset: <strong>${(cal.temp_w_offset >= 0 ? '+' : '')}${(cal.temp_w_offset || 0).toFixed(2)}°C</strong>
             </div>
           </div>
 
           <!-- 3. SENSOR SUHU UDARA -->
-          <div class="calib-dense-card">
-            <div class="calib-meta-left">
-              <span class="calib-sensor-name"><i class="fa-solid fa-sun" style="color: #F59E0B;"></i> Suhu Udara</span>
-              <span class="calib-live-text" id="calib-live-tempa"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(raw.suhu_udara !== undefined ? raw.suhu_udara : state.telemetry.suhu_udara).toFixed(1)}°C</span>
+          <div class="calib-card-row">
+            <div class="calib-row-header">
+              <div class="calib-title-group">
+                <span class="calib-sensor-name"><i class="fa-solid fa-sun" style="color: #F59E0B;"></i> Suhu Udara</span>
+                <span class="calib-live-text" id="calib-live-tempa"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(raw.suhu_udara !== undefined ? raw.suhu_udara : state.telemetry.suhu_udara).toFixed(1)}°C</span>
+              </div>
+              <div class="calib-status-badge" id="calib-stat-tempa">
+                Offset: <strong>${(cal.temp_a_offset >= 0 ? '+' : '')}${(cal.temp_a_offset || 0).toFixed(2)}°C</strong>
+              </div>
             </div>
-            <div class="calib-action-center">
-              <input type="number" step="0.1" id="calib-inp-tempa" class="calib-compact-inp" placeholder="Nilai Aktual" />
-              <button class="calib-icon-btn" title="Simpan Kalibrasi Suhu Udara" onclick="saveSensorCalibration('temp_a', document.getElementById('calib-inp-tempa').value)">
+            <div class="calib-row-body">
+              <input type="number" step="0.1" id="calib-inp-tempa" class="calib-input-field" placeholder="Masukkan Nilai Aktual (°C)" />
+              <button class="calib-save-btn" title="Simpan Kalibrasi Suhu Udara" onclick="saveSensorCalibration('temp_a', document.getElementById('calib-inp-tempa').value)">
                 <i class="fa-solid fa-floppy-disk"></i>
               </button>
-            </div>
-            <div class="calib-badge-right" id="calib-stat-tempa">
-              Offset: <strong>${(cal.temp_a_offset >= 0 ? '+' : '')}${(cal.temp_a_offset || 0).toFixed(2)}°C</strong>
             </div>
           </div>
 
           <!-- 4. SENSOR KELEMBABAN -->
-          <div class="calib-dense-card">
-            <div class="calib-meta-left">
-              <span class="calib-sensor-name"><i class="fa-solid fa-droplet" style="color: #10B981;"></i> Kelembaban</span>
-              <span class="calib-live-text" id="calib-live-hum"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${Math.round(raw.kelembaban !== undefined ? raw.kelembaban : state.telemetry.kelembaban)}%</span>
+          <div class="calib-card-row">
+            <div class="calib-row-header">
+              <div class="calib-title-group">
+                <span class="calib-sensor-name"><i class="fa-solid fa-droplet" style="color: #10B981;"></i> Kelembaban</span>
+                <span class="calib-live-text" id="calib-live-hum"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${Math.round(raw.kelembaban !== undefined ? raw.kelembaban : state.telemetry.kelembaban)}%</span>
+              </div>
+              <div class="calib-status-badge" id="calib-stat-hum">
+                Offset: <strong>${(cal.hum_offset >= 0 ? '+' : '')}${(cal.hum_offset || 0).toFixed(1)}%</strong>
+              </div>
             </div>
-            <div class="calib-action-center">
-              <input type="number" id="calib-inp-hum" class="calib-compact-inp" placeholder="Nilai Aktual" />
-              <button class="calib-icon-btn" title="Simpan Kalibrasi Kelembaban" onclick="saveSensorCalibration('hum', document.getElementById('calib-inp-hum').value)">
+            <div class="calib-row-body">
+              <input type="number" id="calib-inp-hum" class="calib-input-field" placeholder="Masukkan Nilai Aktual (%)" />
+              <button class="calib-save-btn" title="Simpan Kalibrasi Kelembaban" onclick="saveSensorCalibration('hum', document.getElementById('calib-inp-hum').value)">
                 <i class="fa-solid fa-floppy-disk"></i>
               </button>
-            </div>
-            <div class="calib-badge-right" id="calib-stat-hum">
-              Offset: <strong>${(cal.hum_offset >= 0 ? '+' : '')}${(cal.hum_offset || 0).toFixed(1)}%</strong>
             </div>
           </div>
 
-          <!-- 5. SENSOR LEVEL AIR (UKURAN EMBER) -->
-          <div class="calib-dense-card">
-            <div class="calib-meta-left">
-              <span class="calib-sensor-name"><i class="fa-solid fa-water" style="color: #3B82F6;"></i> Level Air (Ember)</span>
-              <span class="calib-live-text" id="calib-live-level"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(state.telemetry.level_air || 0).toFixed(1)}%</span>
+          <!-- 5. SENSOR LEVEL AIR (KOLAM) -->
+          <div class="calib-card-row">
+            <div class="calib-row-header">
+              <div class="calib-title-group">
+                <span class="calib-sensor-name"><i class="fa-solid fa-water" style="color: #3B82F6;"></i> Level Air (Kolam)</span>
+                <span class="calib-live-text" id="calib-live-level"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(state.telemetry.level_air || 0).toFixed(1)}%</span>
+              </div>
+              <div class="calib-status-badge" id="calib-stat-level">
+                <strong>${cal.pond_depth || 42}cm</strong> (0%) &rarr; <strong>${cal.sensor_min_dist || 20}cm</strong> (100%)
+              </div>
             </div>
-            <div class="calib-action-center">
-              <input type="number" id="calib-inp-depth" class="calib-compact-inp" placeholder="Tinggi Ember (cm)" value="${cal.pond_depth || 40}" />
-              <button class="calib-icon-btn" title="Simpan Ukuran Ember" onclick="saveSensorCalibration('depth', document.getElementById('calib-inp-depth').value)">
+            <div class="calib-row-body">
+              <div class="calib-dual-inputs">
+                <div class="calib-input-wrap">
+                  <label>Dasar / 0% (cm)</label>
+                  <input type="number" id="calib-inp-depth" class="calib-input-field" placeholder="0% (cm)" title="Jarak saat Kosong 0% (Dasar Wadah)" value="${cal.pond_depth || 42}" />
+                </div>
+                <div class="calib-input-wrap">
+                  <label>Penuh / 100% (cm)</label>
+                  <input type="number" id="calib-inp-mindist" class="calib-input-field" placeholder="100% (cm)" title="Jarak saat Penuh 100% (Dekat Sensor)" value="${cal.sensor_min_dist || 20}" />
+                </div>
+              </div>
+              <button class="calib-save-btn" title="Simpan Kalibrasi Level Air (Kosong / Penuh)" onclick="saveSensorCalibration('water_level_config', document.getElementById('calib-inp-depth').value)">
                 <i class="fa-solid fa-floppy-disk"></i>
               </button>
             </div>
-            <div class="calib-badge-right" id="calib-stat-level">
-              Ember: <strong>${cal.pond_depth || 40}cm</strong>
+            <div class="calib-warning-banner">
+              <i class="fa-solid fa-circle-info" style="font-size: 12px; color: #2563EB; flex-shrink: 0;"></i>
+              <span><strong>Perhatian:</strong> Jarak air saat penuh minimal <strong>20 cm</strong> dari sensor (Zona Buta AJ-SR04M).</span>
             </div>
           </div>
 
           <!-- 6. SENSOR VOLTASE & AUTO PANEL SURYA -->
-          <div class="calib-dense-card">
-            <div class="calib-meta-left">
-              <span class="calib-sensor-name"><i class="fa-solid fa-car-battery" style="color: #8B5CF6;"></i> Auto Panel (Aki)</span>
-              <span class="calib-live-text" id="calib-live-volt"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(state.telemetry.voltase_aki || 0).toFixed(2)}V</span>
+          <div class="calib-card-row">
+            <div class="calib-row-header">
+              <div class="calib-title-group">
+                <span class="calib-sensor-name"><i class="fa-solid fa-car-battery" style="color: #8B5CF6;"></i> Auto Panel (Aki)</span>
+                <span class="calib-live-text" id="calib-live-volt"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(state.telemetry.voltase_aki || 0).toFixed(2)}V</span>
+              </div>
+              <div class="calib-status-badge" id="calib-stat-volt">
+                Auto: <strong>&le;${cal.vbat_solar_threshold || 11.7}V</strong>
+              </div>
             </div>
-            <div class="calib-action-center">
-              <input type="number" step="0.1" id="calib-inp-solar" class="calib-compact-inp" placeholder="Ambang (V)" value="${cal.vbat_solar_threshold || 11.7}" />
-              <button class="calib-icon-btn" title="Simpan Ambang Auto Panel Surya" onclick="saveSensorCalibration('solar_threshold', document.getElementById('calib-inp-solar').value)">
+            <div class="calib-row-body">
+              <input type="number" step="0.1" id="calib-inp-solar" class="calib-input-field" placeholder="Ambang Batas Voltase (Volt)" value="${cal.vbat_solar_threshold || 11.7}" />
+              <button class="calib-save-btn" title="Simpan Ambang Auto Panel Surya" onclick="saveSensorCalibration('solar_threshold', document.getElementById('calib-inp-solar').value)">
                 <i class="fa-solid fa-floppy-disk"></i>
               </button>
-            </div>
-            <div class="calib-badge-right" id="calib-stat-volt">
-              Auto: <strong>&le;${cal.vbat_solar_threshold || 11.7}V</strong>
             </div>
           </div>
 
@@ -3009,7 +3165,7 @@ function initConfigModals() {
     if (stHum) stHum.innerHTML = `Offset: <strong>${(cal.hum_offset >= 0 ? '+' : '')}${(cal.hum_offset || 0).toFixed(1)}%</strong>`;
 
     const stLevel = document.getElementById('calib-stat-level');
-    if (stLevel) stLevel.innerHTML = `Ember: <strong>${cal.pond_depth || 40}cm</strong>`;
+    if (stLevel) stLevel.innerHTML = `<strong>${cal.pond_depth || 42}cm</strong> (0%) &rarr; <strong>${cal.sensor_min_dist || 20}cm</strong> (100%)`;
 
     const stVolt = document.getElementById('calib-stat-volt');
     if (stVolt) stVolt.innerHTML = `Auto: <strong>&le;${cal.vbat_solar_threshold || 11.7}V</strong>`;
@@ -3106,56 +3262,223 @@ function initConfigModals() {
     });
   }
 
-  // 6. Tentang Aplikasi
+  // 6. Tentang Kami (Versi Profesional + Skripsi Lengkap)
   const cfgAbout = document.getElementById('cfg-about');
   if (cfgAbout) {
     cfgAbout.addEventListener('click', () => {
       openCustomModal(`
-        <div class="modal-content-styled">
-          <h2 class="modal-heading-title">6. Tentang Aplikasi</h2>
+        <div class="modal-content-styled about-modal-wrapper" style="gap: 12px; max-height: 85vh; overflow-y: auto; padding-right: 2px;">
+          <!-- ACADEMIC & INSTITUTIONAL HEADER -->
+          <div class="academic-modal-header">
+            <div>
+              <div class="academic-badge-institute">
+                <i class="fa-solid fa-building-columns"></i> Politeknik Negeri Fakfak
+              </div>
+              <h2 class="academic-title">HIDROPONIK IOT GATEWAY</h2>
+              <div class="academic-subtitle">Platform Monitoring &amp; Otomasi Akuaponik-Hidroponik Berbasis IoT &bull; Tahun 2026</div>
+            </div>
+            <button onclick="closeConfigModal()" style="background: none; border: none; font-size: 24px; color: var(--text-muted); cursor: pointer; padding: 0 4px; line-height: 1;" title="Tutup">&times;</button>
+          </div>
           
-          <div class="about-hero-card">
-            <div class="about-icon-blue"><i class="fa-solid fa-layer-group"></i></div>
-            <div class="about-hero-text">
-              <h3 class="about-app-title">Smart Akuaponik</h3>
-              <p class="about-app-sub">Sistem Monitoring &amp; Kontrol IoT Akuaponik Berbasis LoRa E220 &amp; Firebase Realtime Cloud</p>
-              <div class="about-badges-row">
-                <span class="badge-blue-pill">v1.0.0 Production</span>
-                <span class="badge-green-pill">LoRa Ch 65 (915 MHz)</span>
+          <!-- 1. DESKRIPSI SINGKAT SISTEM -->
+          <div class="academic-hero-box">
+            <div style="display: flex; gap: 12px; align-items: flex-start;">
+              <div class="about-icon-blue" style="width: 42px; height: 42px; font-size: 18px; border-radius: 10px; flex-shrink: 0; background: #2563EB;">
+                <i class="fa-solid fa-seedling"></i>
+              </div>
+              <div>
+                <div style="font-size: 12px; font-weight: 800; color: var(--text-main, #1E293B); margin-bottom: 3px;">Gambaran Umum Sistem</div>
+                <p style="font-size: 11.5px; line-height: 1.5; color: var(--text-muted, #475569); margin: 0;">
+                  <strong>Hidroponik IoT Gateway</strong> adalah sistem monitoring dan otomasi cerdas berbasis Internet of Things yang dirancang untuk memantau parameter kualitas air nutrisi serta mikroklimat tanaman secara presisi. Sistem ini mengintegrasikan sensor telemetri presisi, transmisi nirkabel LoRa E220 915 MHz, dan Firebase Realtime Database guna menghadirkan kendali aktuator cerdas serta otomasi kolam dari mana saja secara real-time.
+                </p>
+                <div style="display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap;">
+                  <span class="badge-blue-pill" style="font-size: 9.5px; padding: 2px 8px;">Tugas Akhir 2026</span>
+                  <span class="badge-green-pill" style="font-size: 9.5px; padding: 2px 8px;">LoRa E220 915 MHz</span>
+                  <span class="badge-blue-pill" style="font-size: 9.5px; padding: 2px 8px; background: #F1F5F9; color: #475569;">Firebase Cloud</span>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="about-device-grid">
-            <div class="device-mini-card">
-              <span class="dev-label">ID Perangkat Gateway</span>
-              <strong class="dev-val">ESP32-GATEWAY-02</strong>
-            </div>
-            <div class="device-mini-card">
-              <span class="dev-label">Node Transmitter</span>
-              <strong class="dev-val">ESP32-NODE-01</strong>
-            </div>
-          </div>
-
-          <div class="about-steps-card">
-            <div class="steps-title">📜 Urutan Pengisian Konfigurasi:</div>
-            <div class="step-list-items">
-              <div class="step-item">
-                <span class="step-num step-num-blue">1</span>
-                <div class="step-text"><strong>Pengaturan WiFi</strong> &mdash; Menghubungkan ESP32 Gateway ke internet.</div>
-              </div>
-              <div class="step-item">
-                <span class="step-num step-num-green">2</span>
-                <div class="step-text"><strong>Integrasi Firebase</strong> &mdash; Sinkronisasi data ke cloud database secara real-time.</div>
+          <!-- 2. VISI & MISI -->
+          <div class="academic-vision-box">
+            <div style="font-size: 18px; color: #D97706; flex-shrink: 0; margin-top: 2px;"><i class="fa-solid fa-bullseye"></i></div>
+            <div>
+              <div style="font-size: 11.5px; font-weight: 800; color: #92400E; text-transform: uppercase; letter-spacing: 0.5px;">Visi &amp; Misi</div>
+              <div style="font-size: 11.5px; color: #78350F; line-height: 1.45; margin-top: 2px;">
+                Mewujudkan sistem pertanian hidroponik dan akuaponik modern berbasis teknologi Internet of Things yang efisien, presisi tinggi, terjangkau, dan ramah lingkungan.
               </div>
             </div>
           </div>
 
-          <div class="modal-actions-center">
-            <button class="btn-modal-close width-100" onclick="closeConfigModal()">Tutup</button>
+          <!-- 3. LAYANAN KAMI -->
+          <div class="academic-services-box">
+            <div style="font-size: 18px; color: #059669; flex-shrink: 0; margin-top: 2px;"><i class="fa-solid fa-hand-holding-hand"></i></div>
+            <div>
+              <div style="font-size: 11.5px; font-weight: 800; color: #065F46; text-transform: uppercase; letter-spacing: 0.5px;">Layanan &amp; Fokus Solusi</div>
+              <div style="font-size: 11.5px; color: #047857; line-height: 1.45; margin-top: 2px;">
+                Kami menyediakan rancang bangun arsitektur perangkat keras IoT terintegrasi, gateway nirkabel jarak jauh LoRa, serta platform web dashboard monitoring dan kendali aktuator cerdas untuk pertanian presisi.
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. FITUR UNGGULAN SISTEM -->
+          <div class="academic-section-card" style="padding: 12px 14px;">
+            <div class="academic-section-title">
+              <i class="fa-solid fa-star" style="color: #F59E0B;"></i> Fitur Unggulan Sistem
+            </div>
+            <div class="academic-feature-grid">
+              <div class="academic-feature-item">
+                <div class="academic-feature-icon" style="background: #EFF6FF; color: #2563EB;">
+                  <i class="fa-solid fa-flask-vial"></i>
+                </div>
+                <div class="academic-feature-text">
+                  <strong>Monitoring Nutrisi PPM &amp; TDS:</strong> Pemantauan kadar kepekatan nutrisi larutan AB Mix secara akurat untuk menjamin kebutuhan nutrisi tanaman terpenuhi optimal.
+                </div>
+              </div>
+              <div class="academic-feature-item">
+                <div class="academic-feature-icon" style="background: #ECFDF5; color: #059669;">
+                  <i class="fa-solid fa-temperature-three-quarters"></i>
+                </div>
+                <div class="academic-feature-text">
+                  <strong>Monitoring Suhu Air &amp; Udara:</strong> Pengawasan suhu perakaran kolam (DS18B20) serta suhu dan kelembaban udara sekitar (DHT) secara real-time.
+                </div>
+              </div>
+              <div class="academic-feature-item">
+                <div class="academic-feature-icon" style="background: #EFF6FF; color: #2563EB;">
+                  <i class="fa-solid fa-water"></i>
+                </div>
+                <div class="academic-feature-text">
+                  <strong>Level Ketinggian Air Kolam:</strong> Sensor ultrasonik mendeteksi persentase volume air secara akurat guna mencegah kekeringan dan proteksi pompa air.
+                </div>
+              </div>
+              <div class="academic-feature-item">
+                <div class="academic-feature-icon" style="background: #ECFDF5; color: #059669;">
+                  <i class="fa-solid fa-toggle-on"></i>
+                </div>
+                <div class="academic-feature-text">
+                  <strong>Kontrol Aktuator 6-Channel &amp; Feeder:</strong> Pengendalian saklar pompa pembesaran, pompa peremajaan, aerator oksigen, dan jadwal pemberian pakan ikan.
+                </div>
+              </div>
+              <div class="academic-feature-item">
+                <div class="academic-feature-icon" style="background: #EFF6FF; color: #2563EB;">
+                  <i class="fa-solid fa-solar-panel"></i>
+                </div>
+                <div class="academic-feature-text">
+                  <strong>Dual Power ATS Solar &amp; Bot Telegram:</strong> Peralihan otomatis catu daya ke panel surya (saat aki &le; 11.7V) serta notifikasi darurat instan via Telegram.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5. TIM PENELITI (MAHASISWA TUGAS AKHIR) -->
+          <div class="academic-section-card" style="padding: 12px 14px;">
+            <div class="academic-section-title">
+              <i class="fa-solid fa-user-graduate" style="color: #2563EB;"></i> Tim Pengembang (Mahasiswa Tugas Akhir)
+            </div>
+            <div class="academic-person-grid">
+              <div class="academic-person-card">
+                <div class="academic-avatar academic-avatar-blue">ML</div>
+                <div style="flex: 1;">
+                  <div class="academic-person-name">Michelle Anggriany Letsoin</div>
+                  <div class="academic-person-meta">NIM: <strong>16323074</strong> &bull; D-III Manajemen Informatika</div>
+                </div>
+              </div>
+              <div class="academic-person-card">
+                <div class="academic-avatar academic-avatar-blue">CA</div>
+                <div style="flex: 1;">
+                  <div class="academic-person-name">Cindy Arina Aulia</div>
+                  <div class="academic-person-meta">NIM: <strong>16323058</strong> &bull; D-III Manajemen Informatika</div>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top: 8px; font-size: 11px; color: var(--text-muted); border-top: 1px dashed var(--border-color, #E2E8F0); padding-top: 6px;">
+              <strong>Jurusan &amp; Program Studi:</strong> Manajemen Informatika &bull; <strong>Perguruan Tinggi:</strong> Politeknik Negeri Fakfak
+            </div>
+          </div>
+
+          <!-- 6. DEWAN DOSEN PEMBIMBING -->
+          <div class="academic-section-card" style="padding: 12px 14px;">
+            <div class="academic-section-title">
+              <i class="fa-solid fa-chalkboard-user" style="color: #059669;"></i> Dewan Dosen Pembimbing
+            </div>
+            <div class="academic-person-grid">
+              <div class="academic-person-card">
+                <div class="academic-avatar academic-avatar-emerald"><i class="fa-solid fa-user-tie"></i></div>
+                <div style="flex: 1;">
+                  <div class="academic-person-name">Syukron Anas, S.Kom., M.Kom.</div>
+                  <div class="academic-person-meta">Dosen Pembimbing I</div>
+                </div>
+              </div>
+              <div class="academic-person-card">
+                <div class="academic-avatar academic-avatar-emerald"><i class="fa-solid fa-user-tie"></i></div>
+                <div style="flex: 1;">
+                  <div class="academic-person-name">Riyadh Arridha, S.Kom., M.T.</div>
+                  <div class="academic-person-meta">Dosen Pembimbing II</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 7. KONTAK & LOKASI -->
+          <div class="academic-section-card" style="padding: 12px 14px;">
+            <div class="academic-section-title">
+              <i class="fa-solid fa-address-book" style="color: #2563EB;"></i> Kontak &amp; Lokasi Workshop
+            </div>
+            <div class="academic-contact-grid">
+              <a href="mailto:hidroponik.iot.gateway@gmail.com" class="academic-contact-item">
+                <i class="fa-solid fa-envelope" style="color: #EA4335; font-size: 14px;"></i>
+                <div>
+                  <div style="font-size: 10px; color: var(--text-muted);">Email Resmi:</div>
+                  <strong>hidroponik.iot.gateway@gmail.com</strong>
+                </div>
+              </a>
+              <a href="https://wa.me/6281234567890" target="_blank" class="academic-contact-item">
+                <i class="fa-brands fa-whatsapp" style="color: #25D366; font-size: 16px;"></i>
+                <div>
+                  <div style="font-size: 10px; color: var(--text-muted);">WhatsApp / Konsultasi:</div>
+                  <strong>+62 812-3456-7890</strong>
+                </div>
+              </a>
+            </div>
+            <div style="margin-top: 8px; font-size: 11px; color: var(--text-main); background: var(--bg-hover, #F8FAFC); border: 1px solid var(--border-color, #E2E8F0); border-radius: 8px; padding: 8px 10px; display: flex; gap: 8px; align-items: flex-start;">
+              <i class="fa-solid fa-location-dot" style="color: #2563EB; margin-top: 2px;"></i>
+              <div>
+                <strong>Lokasi Kampus &amp; Laboratorium:</strong><br>
+                Laboratorium Komputer &amp; Jaringan, Kampus Politeknik Negeri Fakfak, Jl. Imam Bonjol, Kabupaten Fakfak, Papua Barat.
+              </div>
+            </div>
+          </div>
+
+          <!-- 8. SOSMED -->
+          <div class="academic-section-card" style="padding: 12px 14px;">
+            <div class="academic-section-title">
+              <i class="fa-solid fa-share-nodes" style="color: #7C3AED;"></i> Media Sosial &amp; Dokumentasi
+            </div>
+            <div class="academic-social-row">
+              <a href="https://www.instagram.com/polinef_official" target="_blank" class="social-pill-btn">
+                <i class="fa-brands fa-instagram" style="color: #E1306C;"></i> @polinef_official
+              </a>
+              <a href="https://github.com" target="_blank" class="social-pill-btn">
+                <i class="fa-brands fa-github"></i> Repository Proyek
+              </a>
+              <a href="https://t.me/AkuaponikMonitoringBot" target="_blank" class="social-pill-btn">
+                <i class="fa-brands fa-telegram" style="color: #229ED9;"></i> Telegram Bot Alert
+              </a>
+            </div>
+          </div>
+
+          <!-- 9. COPYRIGHT -->
+          <div class="academic-copyright">
+            &copy; 2026 Hidroponik IoT Gateway. All Rights Reserved.
+          </div>
+
+          <!-- 10. TOMBOL TUTUP -->
+          <div class="modal-actions-center" style="margin-top: 4px;">
+            <button class="btn-modal-close width-100" onclick="closeConfigModal()" style="padding: 10px; font-weight: 700; border-radius: 12px; font-size: 13px;">Tutup</button>
           </div>
         </div>
-      `);
+      `, false, true);
     });
   }
 

@@ -173,10 +173,13 @@ class AquaponicsFirebase {
       this.db.ref(`relay/${rKey}`).set(stVal).catch(() => {});
       this.db.ref(`sensor_data/relays/${chIdx}`).set(stVal).catch(() => {});
 
-      const fieldMap = ["lamp", "pump_b", "pump_p", "pump_s", "aerator", "feeder"];
+      const fieldMap = ["lamp", "pump_b", "pump_p", "aerator", "cadangan", "feeder"];
       const sensorField = fieldMap[chIdx];
       if (sensorField) {
         this.db.ref(`sensor_data/${sensorField}`).set(stVal).catch(() => {});
+      }
+      if (chIdx === 3) {
+        this.db.ref(`sensor_data/aerator`).set(stVal).catch(() => {});
       }
       if (chIdx === 0) {
         this.db.ref(`sensor_data/status_daya`).set(stVal === 1 ? "Panel Surya" : "Aki 12V").catch(() => {});
