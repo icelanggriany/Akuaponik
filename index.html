@@ -23,7 +23,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/style.css?v=2.6.0" />
 </head>
 
 <body class="light-mode">
@@ -136,28 +136,133 @@
                 <div class="ecosystem-grid">
                   <!-- Subcard Ikan -->
                   <div class="eco-subcard">
-                    <div class="eco-card-title">Kondisi Ikan</div>
+                    <div class="eco-card-title">Kondisi Ikan (Ikan Lele)</div>
                     <div class="eco-image-wrapper fish-bg">
-                      <svg viewBox="0 0 240 100" class="eco-svg">
-                        <rect width="240" height="100" fill="#78B0D0" rx="10" />
-                        <!-- Animated Water Layer -->
-                        <path id="eco-water-path" d="M 0 50 Q 60 40 120 50 T 240 45 L 240 100 L 0 100 Z" fill="#4B82A6"
-                          class="animated-water-path" />
+                      <svg viewBox="0 0 240 100" preserveAspectRatio="none" class="eco-svg">
+                        <defs>
+                          <!-- Underwater Deep Freshwater Pond Gradient -->
+                          <linearGradient id="pond-depth-grad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#0284C7" />
+                            <stop offset="45%" stop-color="#0369A1" />
+                            <stop offset="100%" stop-color="#075985" />
+                          </linearGradient>
 
-                        <!-- Animated Swimming Fish -->
-                        <g id="eco-fish-group" class="animated-fish-group">
-                          <path id="eco-fish-body"
-                            d="M 40 50 Q 65 35 90 50 Q 105 42 112 36 L 108 50 L 112 64 Q 105 58 90 50 Q 65 65 40 50 Z"
-                            fill="#5E6C7D" />
-                          <circle cx="52" cy="46" r="2.5" fill="#FFF" />
-                          <circle cx="53" cy="46" r="1.2" fill="#000" />
+                          <!-- Water Surface Shimmer Gradient -->
+                          <linearGradient id="water-shimmer-grad" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.6" />
+                            <stop offset="50%" stop-color="#7DD3FC" stop-opacity="0.9" />
+                            <stop offset="100%" stop-color="#0284C7" stop-opacity="0.6" />
+                          </linearGradient>
+
+                          <!-- Sunlight Caustics Beams -->
+                          <linearGradient id="caustic-ray-grad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#E0F2FE" stop-opacity="0.35" />
+                            <stop offset="70%" stop-color="#38BDF8" stop-opacity="0.08" />
+                            <stop offset="100%" stop-color="#0284C7" stop-opacity="0" />
+                          </linearGradient>
+
+                          <!-- Ikan Lele (Catfish) Body Gradient -->
+                          <linearGradient id="catfish-body-grad" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#1E293B" id="fish-color-top" />
+                            <stop offset="45%" stop-color="#334155" id="fish-color-mid" />
+                            <stop offset="85%" stop-color="#64748B" id="fish-color-belly" />
+                            <stop offset="100%" stop-color="#94A3B8" />
+                          </linearGradient>
+
+                          <!-- Catfish Fin Gradient -->
+                          <linearGradient id="catfish-fin-grad" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0%" stop-color="#1E293B" stop-opacity="0.95" id="fish-fin-base" />
+                            <stop offset="100%" stop-color="#475569" stop-opacity="0.5" id="fish-fin-tip" />
+                          </linearGradient>
+
+                          <!-- Glass Bubble Gradient -->
+                          <radialGradient id="glass-bubble-grad" cx="35%" cy="35%" r="65%">
+                            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9" />
+                            <stop offset="40%" stop-color="#BAE6FD" stop-opacity="0.6" />
+                            <stop offset="85%" stop-color="#38BDF8" stop-opacity="0.2" />
+                            <stop offset="100%" stop-color="#0284C7" stop-opacity="0.5" />
+                          </radialGradient>
+                        </defs>
+
+                        <!-- Pond Deep Background -->
+                        <rect width="240" height="100" fill="url(#pond-depth-grad)" />
+
+                        <!-- Sun Caustic Light Rays Beaming Down -->
+                        <polygon points="15,0 55,0 85,100 30,100" fill="url(#caustic-ray-grad)" class="caustic-ray ray-1" />
+                        <polygon points="105,0 145,0 180,100 125,100" fill="url(#caustic-ray-grad)" class="caustic-ray ray-2" />
+                        <polygon points="175,0 215,0 240,100 195,100" fill="url(#caustic-ray-grad)" class="caustic-ray ray-3" />
+
+                        <!-- Underwater Pond Floor Mud & Pebbles -->
+                        <g class="pond-floor-rocks" opacity="0.65">
+                          <ellipse cx="25" cy="97" rx="28" ry="5" fill="#034d70" />
+                          <ellipse cx="75" cy="98" rx="32" ry="4.5" fill="#023b56" />
+                          <ellipse cx="135" cy="97" rx="35" ry="5" fill="#034d70" />
+                          <ellipse cx="195" cy="98" rx="32" ry="4.5" fill="#023b56" />
+                          <ellipse cx="235" cy="97" rx="20" ry="5" fill="#034d70" />
                         </g>
 
-                        <!-- Animated Floating Air Bubbles -->
+                        <!-- Aquatic Pond Weeds Swaying -->
+                        <path d="M 8 100 Q 14 74 10 56 Q 18 72 14 100" fill="#059669" opacity="0.5" class="seaweed-sway sw-1" />
+                        <path d="M 232 100 Q 224 72 230 52 Q 236 74 234 100" fill="#059669" opacity="0.5" class="seaweed-sway sw-2" />
+
+                        <!-- Dynamic Animated Water Surface Wave -->
+                        <path id="eco-water-path" d="M 0 35 Q 60 28 120 35 T 240 32 L 240 100 L 0 100 Z" fill="url(#water-shimmer-grad)" opacity="0.35" class="animated-water-path" />
+
+                        <!-- Realistic Ikan Lele (Catfish) Swimming Group -->
+                        <g id="eco-fish-group" class="animated-catfish-group">
+                          
+                          <!-- Long Catfish Whisker Barbels (Kumis Lele) -->
+                          <g class="catfish-whiskers-group">
+                            <!-- Top Upper Whiskers -->
+                            <path id="eco-whisker-top-1" d="M 44 46 C 30 36 16 34 2 38" stroke="#334155" stroke-width="1.8" stroke-linecap="round" fill="none" class="catfish-whisker-top" />
+                            <path id="eco-whisker-top-2" d="M 45 48 C 32 42 18 44 4 50" stroke="#334155" stroke-width="1.5" stroke-linecap="round" fill="none" class="catfish-whisker-top-2" />
+                            <!-- Bottom Chin Whiskers -->
+                            <path id="eco-whisker-btm-1" d="M 40 56 C 28 64 16 66 4 64" stroke="#475569" stroke-width="1.4" stroke-linecap="round" fill="none" class="catfish-whisker-btm" />
+                            <path id="eco-whisker-btm-2" d="M 46 57 C 34 68 22 72 10 70" stroke="#475569" stroke-width="1.4" stroke-linecap="round" fill="none" class="catfish-whisker-btm-2" />
+                          </g>
+
+                          <!-- Long Dorsal Fin (Sirip Punggung Panjang) -->
+                          <path d="M 76 42 Q 120 38 166 47 L 164 50 Q 120 43 76 45 Z" fill="url(#catfish-fin-grad)" opacity="0.9" />
+
+                          <!-- Long Anal Fin (Sirip Bawah Panjang) -->
+                          <path d="M 90 59 Q 128 60 166 53 L 164 50 Q 128 56 90 55 Z" fill="url(#catfish-fin-grad)" opacity="0.9" />
+
+                          <!-- Rounded Caudal Tail Fin (Ekor Membulat Lele) -->
+                          <g class="catfish-tail-fin">
+                            <path id="eco-fish-tail" d="M 172 50 C 188 43 200 45 204 50 C 200 55 188 57 172 50 Z" fill="url(#catfish-fin-grad)" opacity="0.95" />
+                            <path d="M 174 50 Q 188 46 200 48 M 174 50 Q 188 54 200 52" stroke="#64748B" stroke-width="0.8" opacity="0.7" fill="none" />
+                          </g>
+
+                          <!-- Elongated Cylindrical Catfish Body -->
+                          <path id="eco-fish-body" d="M 34 52 C 38 40 68 38 120 44 C 152 48 168 49 174 50 C 168 53 148 56 120 58 C 68 64 38 62 34 52 Z" fill="url(#catfish-body-grad)" />
+
+                          <!-- Slick Wet Skin Highlights (Kilau Kulit Lele) -->
+                          <path d="M 52 46 C 76 42 110 44 140 48" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" opacity="0.3" fill="none" />
+                          <ellipse cx="86" cy="48" rx="20" ry="3.5" fill="#FFFFFF" opacity="0.15" />
+                          <ellipse cx="128" cy="50" rx="14" ry="2.5" fill="#FFFFFF" opacity="0.12" />
+
+                          <!-- Pectoral Fin with Hard Spine (Patil Lele) -->
+                          <g class="catfish-pectoral-fin">
+                            <path d="M 54 53 Q 44 64 38 68 Q 48 63 54 53 Z" fill="url(#catfish-fin-grad)" opacity="0.95" />
+                            <path d="M 54 53 L 38 68" stroke="#CBD5E1" stroke-width="1.2" opacity="0.8" />
+                          </g>
+
+                          <!-- Gills Slit & Broad Mouth -->
+                          <path d="M 58 46 Q 62 51 58 56" stroke="#0F172A" stroke-width="1.4" fill="none" opacity="0.6" />
+                          <path d="M 34 52 Q 40 54 46 53" stroke="#0F172A" stroke-width="1.2" fill="none" opacity="0.7" />
+
+                          <!-- Small Top Catfish Eye with Specular Glint -->
+                          <circle cx="48" cy="46" r="2.8" fill="#0F172A" />
+                          <circle cx="47.5" cy="45.3" r="1.1" fill="#FFFFFF" />
+                        </g>
+
+                        <!-- Glassy Water Bubbles -->
                         <g id="eco-bubbles-group" class="animated-bubbles-group">
-                          <circle cx="100" cy="40" r="3" fill="#EBF5FF" opacity="0.7" class="bubble bubble-1" />
-                          <circle cx="108" cy="30" r="4" fill="#EBF5FF" opacity="0.8" class="bubble bubble-2" />
-                          <circle cx="115" cy="20" r="2" fill="#EBF5FF" opacity="0.6" class="bubble bubble-3" />
+                          <circle cx="42" cy="40" r="2.5" fill="url(#glass-bubble-grad)" class="bubble bubble-1" />
+                          <circle cx="95" cy="55" r="3.2" fill="url(#glass-bubble-grad)" class="bubble bubble-2" />
+                          <circle cx="160" cy="45" r="2.8" fill="url(#glass-bubble-grad)" class="bubble bubble-3" />
+                          <circle cx="205" cy="65" r="4.0" fill="url(#glass-bubble-grad)" class="bubble bubble-4" />
+                          <circle cx="130" cy="75" r="2.0" fill="url(#glass-bubble-grad)" class="bubble bubble-5" />
                         </g>
                       </svg>
                     </div>
@@ -168,36 +273,138 @@
 
                   <!-- Subcard Tanaman -->
                   <div class="eco-subcard">
-                    <div class="eco-card-title">Kondisi Tanaman</div>
+                    <div class="eco-card-title">Kondisi Tanaman (Nutrisi &amp; Air)</div>
                     <div class="eco-image-wrapper plant-bg">
-                      <svg viewBox="0 0 240 100" class="eco-svg">
-                        <rect width="240" height="100" fill="#6B7280" rx="10" />
-                        <rect y="40" width="240" height="60" fill="#4B5563" />
-                        <!-- Pot & Hydroponic Plant -->
-                        <path d="M 100 55 L 140 55 L 132 40 L 108 40 Z" fill="#1F2937" />
+                      <svg viewBox="0 0 240 100" preserveAspectRatio="none" class="eco-svg">
+                        <defs>
+                          <!-- Hydroponic Chamber Background -->
+                          <linearGradient id="plant-bg-ambient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#E2E8F0" />
+                            <stop offset="42%" stop-color="#CBD5E1" />
+                            <stop offset="43%" stop-color="#334155" />
+                            <stop offset="100%" stop-color="#1E293B" />
+                          </linearGradient>
 
-                        <!-- Animated Swaying Plant Leaves -->
-                        <g id="eco-plant-leaves-group" class="animated-plant-leaves">
-                          <path id="eco-leaf-left" d="M 120 40 Q 100 20 85 28 Q 105 12 120 40 Z" fill="#10B981"
-                            class="leaf leaf-left" />
-                          <path id="eco-leaf-right" d="M 120 40 Q 140 20 155 28 Q 135 12 120 40 Z" fill="#059669"
-                            class="leaf leaf-right" />
-                          <path id="eco-leaf-center" d="M 120 40 Q 120 10 112 5 Q 124 10 120 40 Z" fill="#34D399"
-                            class="leaf leaf-center" />
+                          <!-- Nutrient Water Liquid Gradient -->
+                          <linearGradient id="nutrient-liquid-grad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#0284C7" stop-opacity="0.8" />
+                            <stop offset="50%" stop-color="#0369A1" stop-opacity="0.9" />
+                            <stop offset="100%" stop-color="#0C4A6E" stop-opacity="0.98" />
+                          </linearGradient>
+
+                          <!-- Lush Pakcoy Leaf 1 Gradient -->
+                          <linearGradient id="leaf-grad-main" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#34D399" id="leaf-color-tip" />
+                            <stop offset="50%" stop-color="#10B981" id="leaf-color-mid" />
+                            <stop offset="100%" stop-color="#065F46" id="leaf-color-base" />
+                          </linearGradient>
+
+                          <!-- Secondary Leaf Gradient -->
+                          <linearGradient id="leaf-grad-side" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#6EE7B7" id="leaf-side-tip" />
+                            <stop offset="60%" stop-color="#059669" id="leaf-side-mid" />
+                            <stop offset="100%" stop-color="#064E3B" id="leaf-side-base" />
+                          </linearGradient>
+
+                          <!-- Sunlight Grow Ray -->
+                          <linearGradient id="grow-ray-grad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#FEF08A" stop-opacity="0.35" />
+                            <stop offset="100%" stop-color="#10B981" stop-opacity="0" />
+                          </linearGradient>
+
+                          <!-- Glowing Nutrient Ion -->
+                          <radialGradient id="nutrient-ion-glow" cx="50%" cy="50%" r="50%">
+                            <stop offset="0%" stop-color="#67E8F9" stop-opacity="1" />
+                            <stop offset="70%" stop-color="#06B6D4" stop-opacity="0.7" />
+                            <stop offset="100%" stop-color="#0891B2" stop-opacity="0" />
+                          </radialGradient>
+                        </defs>
+
+                        <!-- Hydroponics Bed Background -->
+                        <rect width="240" height="100" fill="url(#plant-bg-ambient)" />
+
+                        <!-- Grow Light Glow Beaming Down onto Leaves -->
+                        <polygon points="60,0 180,0 210,50 30,50" fill="url(#grow-ray-grad)" />
+
+                        <!-- Animated Nutrient Reservoir Liquid Layer (Dynamic Y Height) -->
+                        <path id="eco-plant-water-path" d="M 0 60 Q 60 56 120 60 T 240 58 L 240 100 L 0 100 Z" fill="url(#nutrient-liquid-grad)" class="animated-water-path" />
+
+                        <!-- Reservoir Measurement Water Line Markers -->
+                        <g opacity="0.3" stroke="#94A3B8" stroke-width="0.8" stroke-dasharray="3,3">
+                          <line x1="200" y1="55" x2="238" y2="55" />
+                          <line x1="210" y1="70" x2="238" y2="70" />
+                          <line x1="215" y1="85" x2="238" y2="85" />
                         </g>
 
-                        <!-- Animated Roots & Nutrient Flow -->
+                        <!-- Slotted Hydroponic Net Cup Pot -->
+                        <g class="hydro-net-pot">
+                          <rect x="94" y="40" width="52" height="5" rx="2" fill="#1E293B" />
+                          <path d="M 98 45 L 142 45 L 134 60 L 106 60 Z" fill="#0F172A" opacity="0.9" />
+                          <line x1="106" y1="46" x2="112" y2="58" stroke="#475569" stroke-width="1.2" />
+                          <line x1="120" y1="46" x2="120" y2="58" stroke="#475569" stroke-width="1.2" />
+                          <line x1="134" y1="46" x2="128" y2="58" stroke="#475569" stroke-width="1.2" />
+                          <!-- Hydroton Clay Pebbles -->
+                          <circle cx="104" cy="42" r="2.2" fill="#9A3412" />
+                          <circle cx="112" cy="41" r="2.4" fill="#C2410C" />
+                          <circle cx="120" cy="42" r="2.1" fill="#7C2D12" />
+                          <circle cx="128" cy="41" r="2.5" fill="#9A3412" />
+                          <circle cx="136" cy="42" r="2.0" fill="#C2410C" />
+                        </g>
+
+                        <!-- Dense Natural Hydroponic Root Network -->
                         <g id="eco-plant-roots-group" class="animated-plant-roots">
-                          <path d="M 112 55 Q 108 75 105 90 M 120 55 Q 120 80 122 95 M 128 55 Q 132 75 135 90"
-                            fill="none" stroke="#D1D5DB" stroke-width="2" stroke-dasharray="6,4" class="root-lines" />
-                          <circle cx="108" cy="70" r="1.5" fill="#60A5FA" class="nutrient-drop drop-1" />
-                          <circle cx="120" cy="75" r="2.0" fill="#38BDF8" class="nutrient-drop drop-2" />
-                          <circle cx="130" cy="68" r="1.5" fill="#60A5FA" class="nutrient-drop drop-3" />
+                          <path d="M 110 60 C 106 72 100 82 96 94" fill="none" stroke="#F8FAFC" stroke-width="1.8" stroke-linecap="round" opacity="0.95" />
+                          <path d="M 120 60 C 120 74 122 84 121 96" fill="none" stroke="#F8FAFC" stroke-width="2.0" stroke-linecap="round" opacity="0.95" />
+                          <path d="M 130 60 C 134 72 140 82 144 94" fill="none" stroke="#F8FAFC" stroke-width="1.8" stroke-linecap="round" opacity="0.95" />
+
+                          <path d="M 106 68 Q 96 75 90 82 M 103 76 Q 94 84 88 92" fill="none" stroke="#E2E8F0" stroke-width="1.1" opacity="0.85" />
+                          <path d="M 120 68 Q 114 78 110 88 M 121 75 Q 128 82 132 90" fill="none" stroke="#E2E8F0" stroke-width="1.1" opacity="0.85" />
+                          <path d="M 134 68 Q 144 75 150 84 M 138 76 Q 146 86 152 92" fill="none" stroke="#E2E8F0" stroke-width="1.1" opacity="0.85" />
+
+                          <path d="M 96 82 Q 90 86 84 89 M 144 82 Q 150 86 156 90 M 108 84 Q 102 90 98 95 M 134 85 Q 140 90 144 96" fill="none" stroke="#CBD5E1" stroke-width="0.7" opacity="0.75" stroke-dasharray="2,1" />
+
+                          <circle cx="95" cy="85" r="2.2" fill="url(#nutrient-ion-glow)" class="nutrient-drop drop-1" />
+                          <circle cx="120" cy="88" r="2.8" fill="url(#nutrient-ion-glow)" class="nutrient-drop drop-2" />
+                          <circle cx="145" cy="86" r="2.4" fill="url(#nutrient-ion-glow)" class="nutrient-drop drop-3" />
+                          <circle cx="108" cy="74" r="1.8" fill="url(#nutrient-ion-glow)" class="nutrient-drop drop-4" />
+                          <circle cx="132" cy="76" r="1.8" fill="url(#nutrient-ion-glow)" class="nutrient-drop drop-5" />
+                        </g>
+
+                        <!-- Multi-Layered Realistic Lush Plant Foliage -->
+                        <g id="eco-plant-leaves-group" class="animated-plant-leaves">
+                          <g class="leaf-branch branch-back-left">
+                            <path id="eco-leaf-back-left" d="M 115 42 C 92 34 76 18 80 6 C 96 10 108 26 117 40 Z" fill="url(#leaf-grad-side)" opacity="0.85" />
+                            <path d="M 116 41 Q 100 24 81 7" stroke="#34D399" stroke-width="0.9" fill="none" opacity="0.6" />
+                          </g>
+
+                          <g class="leaf-branch branch-back-right">
+                            <path id="eco-leaf-back-right" d="M 125 42 C 148 34 164 18 160 6 C 144 10 132 26 123 40 Z" fill="url(#leaf-grad-side)" opacity="0.85" />
+                            <path d="M 124 41 Q 140 24 159 7" stroke="#34D399" stroke-width="0.9" fill="none" opacity="0.6" />
+                          </g>
+
+                          <g class="leaf-branch branch-left">
+                            <path id="eco-leaf-left" d="M 118 42 C 90 40 68 28 66 12 C 86 16 104 30 119 40 Z" fill="url(#leaf-grad-main)" />
+                            <path d="M 118 41 Q 92 28 68 13" stroke="#A7F3D0" stroke-width="1.1" fill="none" opacity="0.7" />
+                            <path d="M 106 34 Q 102 24 94 22 M 95 28 Q 88 18 78 18 M 84 21 Q 78 14 70 15" stroke="#A7F3D0" stroke-width="0.7" fill="none" opacity="0.55" />
+                          </g>
+
+                          <g class="leaf-branch branch-right">
+                            <path id="eco-leaf-right" d="M 122 42 C 150 40 172 28 174 12 C 154 16 136 30 121 40 Z" fill="url(#leaf-grad-main)" />
+                            <path d="M 122 41 Q 148 28 172 13" stroke="#A7F3D0" stroke-width="1.1" fill="none" opacity="0.7" />
+                            <path d="M 134 34 Q 138 24 146 22 M 145 28 Q 152 18 162 18 M 156 21 Q 162 14 170 15" stroke="#A7F3D0" stroke-width="0.7" fill="none" opacity="0.55" />
+                          </g>
+
+                          <g class="leaf-branch branch-center">
+                            <path id="eco-leaf-center" d="M 120 42 C 108 26 106 10 120 2 C 134 10 132 26 120 42 Z" fill="url(#leaf-grad-main)" />
+                            <path d="M 120 42 L 120 3" stroke="#D1FAE5" stroke-width="1.2" fill="none" opacity="0.75" />
+                            <path d="M 120 30 Q 112 22 110 16 M 120 30 Q 128 22 130 16 M 120 18 Q 114 12 112 7 M 120 18 Q 126 12 128 7" stroke="#D1FAE5" stroke-width="0.7" fill="none" opacity="0.6" />
+                            <path d="M 117 24 C 114 14 116 8 120 4" stroke="#FFFFFF" stroke-width="0.8" opacity="0.45" fill="none" />
+                          </g>
                         </g>
                       </svg>
                     </div>
                     <div class="eco-status-pill green-pill" id="eco-plant-status-pill">
-                      <span class="status-dot green"></span> Nutrisi Optimal (598 PPM): Tanaman Subur 🌿
+                      <span class="status-dot green"></span> Nutrisi Optimal (598 PPM) • Air: 54.7% 🌿
                     </div>
                   </div>
                 </div>
@@ -310,7 +517,7 @@
                 </div>
               </div>
 
-              <!-- Card 2: TDS Nutrisi Air (EXACT MATCH REFERENCE SCREENSHOT) -->
+              <!-- Card 2: TDS Nutrisi Air (EXACT MATCH TO KELEMBABAN UDARA LAYOUT) -->
               <div class="card metric-card tds-card-custom" id="card-tds">
                 <div class="card-header-flex-top">
                   <div class="card-title-with-outline-icon">
@@ -321,28 +528,31 @@
                   </div>
                 </div>
 
-                <div class="gauge-metric-center-row">
-                  <div class="ring-gauge-wrapper-box">
+                <!-- Center Ring Gauge Visual (Padat di Tengah) -->
+                <div class="humidity-center-visual-box">
+                  <div class="ring-gauge-wrapper-box humidity-ring-large-box">
                     <svg viewBox="0 0 64 64" class="ring-gauge-svg">
                       <!-- Soft background track ring -->
-                      <circle cx="32" cy="32" r="24" fill="none" stroke="#E0F2FE" stroke-width="7" />
+                      <circle cx="32" cy="32" r="25" fill="none" stroke="#E0F2FE" stroke-width="7" />
                       <!-- Dynamic progress fill ring -->
-                      <circle id="tds-ring-fill" cx="32" cy="32" r="24" fill="none" stroke="#2563EB" stroke-width="7"
-                        stroke-linecap="round" stroke-dasharray="150.8" stroke-dashoffset="150.8"
+                      <circle id="tds-ring-fill" cx="32" cy="32" r="25" fill="none" stroke="#0284C7"
+                        stroke-width="7" stroke-linecap="round" stroke-dasharray="157.1" stroke-dashoffset="157.1"
                         transform="rotate(-90 32 32)"
                         style="transition: stroke-dashoffset 0.6s ease, stroke 0.4s ease;" />
                     </svg>
-                    <div class="ring-center-white-circle">
-                      <span class="gauge-unit-bold text-slate">PPM</span>
+                    <div class="ring-center-white-circle humidity-inner-large-circle">
+                      <span class="gauge-unit-bold text-sky">PPM</span>
                     </div>
                   </div>
-                  <div class="gauge-info-text-side">
-                    <div class="metric-number-dark" id="val-tds">0</div>
-                    <div class="sub-text-gray">Target: 400-900</div>
-                    <div class="status-warning-amber" id="status-tds">
-                      ⚠️ Nutrisi Rendah (Air Bersih)
-                    </div>
+                </div>
+
+                <!-- Bottom Metric Body (Status Di Samping Angka) -->
+                <div class="air-temp-body">
+                  <div class="val-status-inline-row">
+                    <span class="metric-number-dark text-sky-val" id="val-tds">0</span>
+                    <span class="air-temp-status-pill status-amber-pill" id="status-tds">Rendah</span>
                   </div>
+                  <div class="sub-text-gray">Target: 400-900 PPM</div>
                 </div>
               </div>
 
@@ -1194,8 +1404,8 @@
   </div>
 
   <!-- Custom Scripts -->
-  <script src="js/firebase-config.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/firebase-config.js?v=2.6.0"></script>
+  <script src="js/app.js?v=2.6.0"></script>
 </body>
 
 </html>

@@ -51,6 +51,24 @@ document.addEventListener('DOMContentLoaded', () => {
 const state = {
   activeTab: 'tab-beranda',
   activePeriod: 'harian',
+  rawTelemetry: {
+    suhu_air: 0.0,
+    tds: 0,
+    suhu_udara: 0.0,
+    kelembaban: 0,
+    level_air: 0.0,
+    voltase_aki: 0.0
+  },
+  calibration: {
+    tds_factor: 1.0,
+    temp_w_offset: 0.0,
+    temp_a_offset: 0.0,
+    hum_offset: 0.0,
+    level_offset: 0.0,
+    volt_factor: 1.0,
+    volt_offset: 0.0,
+    pond_depth: 100.0
+  },
   telemetry: {
     suhu_air: 0.0,
     tds: 0,
@@ -402,31 +420,121 @@ function addNotification(type, title, desc, source = 'system') {
 }
 window.addNotification = addNotification;
 
-/* ================= 4. REAL-TIME DATA BINDING ================= */
+/* ================= 4. REAL-TIME DATA BINDING & CALIBRATION ================= */
+function loadCalibration() {
+  try {
+    const saved = localStorage.getItem('aquaponics_calibration');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      state.calibration = Object.assign(state.calibration || {}, parsed);
+    }
+  } catch (e) {}
+
+  if (window.aquaponicsDB && window.aquaponicsDB.db) {
+    window.aquaponicsDB.db.ref('config/calibration').once('value').then(snap => {
+      const val = snap.val();
+      if (val && typeof val === 'object') {
+        state.calibration = Object.assign(state.calibration || {}, val);
+        try {
+          localStorage.setItem('aquaponics_calibration', JSON.stringify(state.calibration));
+        } catch (e) {}
+        applyCalibrationToTelemetry();
+        if (typeof updateUI === 'function') updateUI();
+        if (typeof window.updateLiveCalibrationBadges === 'function') window.updateLiveCalibrationBadges();
+      }
+    }).catch(() => {});
+  }
+}
+
+function applyCalibrationToTelemetry() {
+  const cal = state.calibration || {};
+  const raw = state.rawTelemetry || {};
+
+  if (raw.suhu_air !== undefined) {
+    state.telemetry.suhu_air = parseFloat((raw.suhu_air + (cal.temp_w_offset || 0)).toFixed(1));
+  }
+  if (raw.tds !== undefined) {
+    const factor = (cal.tds_factor !== undefined) ? cal.tds_factor : 1.0;
+    state.telemetry.tds = Math.max(0, Math.round(raw.tds * factor));
+  }
+  if (raw.suhu_udara !== undefined) {
+    state.telemetry.suhu_udara = parseFloat((raw.suhu_udara + (cal.temp_a_offset || 0)).toFixed(1));
+  }
+  if (raw.kelembaban !== undefined) {
+    state.telemetry.kelembaban = Math.max(0, Math.min(100, Math.round(raw.kelembaban + (cal.hum_offset || 0))));
+  }
+  if (raw.level_air !== undefined) {
+    const depth = (cal.pond_depth && cal.pond_depth > 0) ? parseFloat(cal.pond_depth) : 40.0;
+    // Jarak aktual sensor ke air dihitung dari baseline transmitter (100cm):
+    const distanceCm = 100.0 - (raw.level_air || 0.0);
+    // Tinggi air di dalam ember = Tinggi Ember (depth) - Jarak Sensor (distanceCm)
+    let calculatedLevel = ((depth - distanceCm) / depth) * 100.0;
+    if (calculatedLevel < 0) calculatedLevel = 0.0;
+    if (calculatedLevel > 100) calculatedLevel = 100.0;
+    state.telemetry.level_air = Math.max(0, Math.min(100, parseFloat((calculatedLevel + (cal.level_offset || 0)).toFixed(1))));
+  }
+  if (raw.voltase_aki !== undefined) {
+    const vFactor = (cal.volt_factor !== undefined) ? cal.volt_factor : 1.0;
+    state.telemetry.voltase_aki = Math.max(0, parseFloat((raw.voltase_aki * vFactor + (cal.volt_offset || 0)).toFixed(2)));
+    checkAutoSolarPowerSwitch();
+  }
+}
+
+function checkAutoSolarPowerSwitch() {
+  const cal = state.calibration || {};
+  const vBat = state.telemetry.voltase_aki;
+  const threshold = (cal.vbat_solar_threshold !== undefined && cal.vbat_solar_threshold > 0) ? cal.vbat_solar_threshold : 11.7;
+
+  // Jika voltase aki drop di bawah ambang batas (<= 11.7V) dan Relay 1 (Panel Surya) belum menyala
+  if (vBat > 1.0 && vBat <= threshold && state.relays[0] === 0 && cal.auto_solar_enabled !== false) {
+    console.log(`[Auto Solar ATS] Low Battery detected (${vBat.toFixed(2)}V <= ${threshold}V). Activating Relay 1 (Panel Surya)!`);
+    state.relays[0] = 1;
+    if (window.aquaponicsDB && typeof window.aquaponicsDB.updateRelayState === 'function') {
+      window.aquaponicsDB.updateRelayState(1, 1);
+    }
+    if (typeof syncRelayUI === 'function') syncRelayUI();
+    if (typeof addNotification === 'function') {
+      addNotification('warning', 'Auto-Switch Panel Surya', `Tegangan Aki Rendah (${vBat.toFixed(2)}V \u2264 ${threshold}V). Relay Panel Surya otomatis dinyalakan!`);
+    }
+  }
+}
+
 function initRealtimeDataBinding() {
+  loadCalibration();
+
   if (window.aquaponicsDB) {
     window.aquaponicsDB.subscribeTelemetry(data => {
       if (data) {
         let updated = false;
-        if (data.suhu_air !== undefined) { state.telemetry.suhu_air = parseFloat(data.suhu_air); updated = true; }
-        else if (data.temp_w !== undefined) { state.telemetry.suhu_air = parseFloat(data.temp_w); updated = true; }
 
-        if (data.tds !== undefined) { state.telemetry.tds = parseFloat(data.tds); updated = true; }
+        // 1. Simpan nilai mentah (Raw Sensor Reading)
+        if (data.suhu_air !== undefined) { state.rawTelemetry.suhu_air = parseFloat(data.suhu_air); updated = true; }
+        else if (data.temp_w !== undefined) { state.rawTelemetry.suhu_air = parseFloat(data.temp_w); updated = true; }
 
-        if (data.suhu_udara !== undefined) { state.telemetry.suhu_udara = parseFloat(data.suhu_udara); updated = true; }
-        else if (data.temp_a !== undefined) { state.telemetry.suhu_udara = parseFloat(data.temp_a); updated = true; }
+        if (data.tds !== undefined) { state.rawTelemetry.tds = parseFloat(data.tds); updated = true; }
 
-        if (data.kelembaban !== undefined) { state.telemetry.kelembaban = parseFloat(data.kelembaban); updated = true; }
-        else if (data.hum !== undefined) { state.telemetry.kelembaban = parseFloat(data.hum); updated = true; }
+        if (data.suhu_udara !== undefined) { state.rawTelemetry.suhu_udara = parseFloat(data.suhu_udara); updated = true; }
+        else if (data.temp_a !== undefined) { state.rawTelemetry.suhu_udara = parseFloat(data.temp_a); updated = true; }
 
-        if (data.level_air !== undefined) { state.telemetry.level_air = parseFloat(data.level_air); updated = true; }
-        else if (data.water_level !== undefined) { state.telemetry.level_air = parseFloat(data.water_level); updated = true; }
+        if (data.kelembaban !== undefined) { state.rawTelemetry.kelembaban = parseFloat(data.kelembaban); updated = true; }
+        else if (data.hum !== undefined) { state.rawTelemetry.kelembaban = parseFloat(data.hum); updated = true; }
 
-        if (data.voltase_aki !== undefined) { state.telemetry.voltase_aki = parseFloat(data.voltase_aki); updated = true; }
-        else if (data.v_bat !== undefined) { state.telemetry.voltase_aki = parseFloat(data.v_bat); updated = true; }
+        if (data.level_air !== undefined) { state.rawTelemetry.level_air = parseFloat(data.level_air); updated = true; }
+        else if (data.water_level !== undefined) { state.rawTelemetry.level_air = parseFloat(data.water_level); updated = true; }
+
+        if (data.voltase_aki !== undefined) { state.rawTelemetry.voltase_aki = parseFloat(data.voltase_aki); updated = true; }
+        else if (data.v_bat !== undefined) { state.rawTelemetry.voltase_aki = parseFloat(data.v_bat); updated = true; }
 
         if (data.status_daya !== undefined) { state.telemetry.status_daya = data.status_daya; updated = true; }
         else if (data.lamp !== undefined) { state.telemetry.status_daya = (data.lamp == 1 ? "Panel Surya" : "Aki 12V"); updated = true; }
+
+        // 2. Terapkan Kalibrasi Presisi (Faktor & Offset)
+        applyCalibrationToTelemetry();
+
+        // 3. Update Live Badge pada Modal Kalibrasi jika sedang terbuka
+        if (typeof window.updateLiveCalibrationBadges === 'function') {
+          window.updateLiveCalibrationBadges();
+        }
 
         // Feeder CH6 (Index 5): Pastikan sinkron hanya saat proses pakan selesai
         if (!window.feedCountdownInterval && state.relays[5] !== 0) {
@@ -436,7 +544,7 @@ function initRealtimeDataBinding() {
 
         if (updated) {
           updateUI();
-          pushRealtimeChartData(data);
+          pushRealtimeChartData(state.telemetry);
         }
       }
     });
@@ -473,7 +581,7 @@ function initRealtimeDataBinding() {
 
     if (window.aquaponicsDB.subscribePumpSchedules) {
       window.aquaponicsDB.subscribePumpSchedules(list => {
-        if (Array.isArray(list) && list.length > 0) {
+        if (Array.isArray(list)) {
           state.pumpSchedules = list;
           if (typeof renderPumpSchedules === 'function') renderPumpSchedules();
         }
@@ -657,38 +765,41 @@ function updateUI() {
   if (isTdsCritical) {
     if (elTds) {
       elTds.classList.add('text-critical-red');
-      elTds.classList.remove('text-sky');
+      elTds.classList.remove('text-sky-val');
     }
     if (tdsStatusEl) {
-      tdsStatusEl.className = 'status-warning-amber';
-      tdsStatusEl.style.color = '#D97706';
-      tdsStatusEl.innerHTML = `⚠️ ${tdsVal < 400 ? 'Nutrisi Rendah (Air Bersih)' : 'Nutrisi Pekat'}`;
+      if (tdsVal < 400) {
+        tdsStatusEl.className = 'air-temp-status-pill status-amber-pill';
+        tdsStatusEl.innerHTML = 'Rendah';
+      } else {
+        tdsStatusEl.className = 'air-temp-status-pill red-pill';
+        tdsStatusEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Pekat';
+      }
     }
   } else {
     if (elTds) {
       elTds.classList.remove('text-critical-red');
-      elTds.classList.add('text-sky');
+      elTds.classList.add('text-sky-val');
     }
     if (tdsStatusEl) {
-      tdsStatusEl.className = 'success-text-normal';
-      tdsStatusEl.innerHTML = '<span class="status-dot green"></span> Nutrisi Optimal';
+      tdsStatusEl.className = 'air-temp-status-pill status-blue-pill';
+      tdsStatusEl.innerHTML = '<span class="status-dot green"></span> Optimal';
     }
   }
   if (elTds) elTds.innerHTML = `${tdsVal}`;
 
-  // SVG TDS Ring: Circumference = 150.8
-  // Nilai 0 PPM = Offset 150.8 (Lingkaran Biru 0 / Kosong Total)
-  // Nilai > 0 PPM = Menyesuaikan persentase (Target 1000 PPM = 100%)
+  // SVG TDS Ring: Circumference = 157.1 (Matches Kelembaban Udara)
   if (tdsRingFill) {
     const tdsPct = Math.min(100, Math.max(0, (tdsVal / 1000) * 100));
-    const offset = 150.8 - (150.8 * tdsPct) / 100;
+    const offset = 157.1 - (157.1 * tdsPct) / 100;
     tdsRingFill.style.strokeDashoffset = offset;
 
-    // Warna MERAH HANYA jika angka PPM naik tinggi melampaui batas pekat (> 900 PPM)
     if (tdsVal > 900) {
       tdsRingFill.style.stroke = '#EF4444';
+    } else if (tdsVal < 400) {
+      tdsRingFill.style.stroke = '#F59E0B';
     } else {
-      tdsRingFill.style.stroke = '#2563EB';
+      tdsRingFill.style.stroke = '#0284C7';
     }
   }
 
@@ -903,78 +1014,118 @@ function updateEcosystemStatus() {
   const suhuAir = state.telemetry.suhu_air;
   const tdsVal = Math.round(state.telemetry.tds);
 
-  // ================= 1. KONDISI IKAN (WATER LEVEL & FISH) =================
-  const ecoWaterPath = document.getElementById('eco-water-path');
+  // ================= 1. KONDISI IKAN (BERDASARKAN SUHU AIR KOLAM) =================
   const ecoFishGroup = document.getElementById('eco-fish-group');
-  const ecoFishBody = document.getElementById('eco-fish-body');
   const ecoBubblesGroup = document.getElementById('eco-bubbles-group');
   const ecoFishPill = document.getElementById('eco-fish-status-pill');
+  const fishColorTop = document.getElementById('fish-color-top');
+  const fishColorMid = document.getElementById('fish-color-mid');
+  const fishColorBelly = document.getElementById('fish-color-belly');
+  const fishFinBase = document.getElementById('fish-fin-base');
 
-  const waterY = Math.max(20, Math.min(85, Math.round(90 - (levelAir * 0.7))));
-  if (ecoWaterPath) {
-    ecoWaterPath.setAttribute('d', `M 0 ${waterY} Q 60 ${waterY - 8} 120 ${waterY} T 240 ${waterY - 5} L 240 100 L 0 100 Z`);
-  }
+  const isTempCritical = suhuAir > 0.0 && (suhuAir < 24.0 || suhuAir > 32.0);
 
-  const fishYOffset = Math.round((waterY - 50) * 0.7);
-  const isWaterLow = levelAir < 30.0;
-  const isTempCritical = suhuAir > 0.0 && (suhuAir < 20.0 || suhuAir > 34.0);
-  const isFishCritical = isWaterLow || isTempCritical;
-
-  if (isFishCritical) {
-    if (ecoFishBody) ecoFishBody.setAttribute('fill', '#EF4444');
+  if (isTempCritical) {
+    if (suhuAir > 32.0) {
+      // Suhu Panas (Kemerahan Stres)
+      if (fishColorTop) fishColorTop.setAttribute('stop-color', '#DC2626');
+      if (fishColorMid) fishColorMid.setAttribute('stop-color', '#EF4444');
+      if (fishColorBelly) fishColorBelly.setAttribute('stop-color', '#FCA5A5');
+      if (fishFinBase) fishFinBase.setAttribute('stop-color', '#DC2626');
+    } else {
+      // Suhu Dingin (Biru Pasif)
+      if (fishColorTop) fishColorTop.setAttribute('stop-color', '#1D4ED8');
+      if (fishColorMid) fishColorMid.setAttribute('stop-color', '#3B82F6');
+      if (fishColorBelly) fishColorBelly.setAttribute('stop-color', '#93C5FD');
+      if (fishFinBase) fishFinBase.setAttribute('stop-color', '#2563EB');
+    }
     if (ecoFishGroup) {
-      ecoFishGroup.style.transform = `translate(10px, ${fishYOffset + 12}px) rotate(22deg)`;
+      ecoFishGroup.style.transform = `translate(10px, 12px) rotate(22deg)`;
     }
     if (ecoBubblesGroup) ecoBubblesGroup.style.display = 'none';
     if (ecoFishPill) {
       ecoFishPill.className = 'eco-status-pill red-pill';
-      if (isWaterLow) {
-        ecoFishPill.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><span>Air Kritis (${levelAir.toFixed(1)}%): Air Dangkal!</span>`;
+      if (suhuAir > 32.0) {
+        ecoFishPill.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><span>Suhu Panas (${suhuAir.toFixed(1)}&deg;C): Ikan Stres!</span>`;
       } else {
-        ecoFishPill.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><span>Suhu Air (${suhuAir.toFixed(1)}&deg;C): Kritis!</span>`;
+        ecoFishPill.innerHTML = `<i class="fa-solid fa-snowflake"></i><span>Suhu Dingin (${suhuAir.toFixed(1)}&deg;C): Ikan Pasif</span>`;
       }
     }
   } else {
-    if (ecoFishBody) ecoFishBody.setAttribute('fill', '#5E6C7D');
+    // Normal Sehat (Ikan Lele Hitam / Abu-Abu Berkilau)
+    if (fishColorTop) fishColorTop.setAttribute('stop-color', '#1E293B');
+    if (fishColorMid) fishColorMid.setAttribute('stop-color', '#334155');
+    if (fishColorBelly) fishColorBelly.setAttribute('stop-color', '#64748B');
+    if (fishFinBase) fishFinBase.setAttribute('stop-color', '#1E293B');
+
     if (ecoFishGroup) {
-      ecoFishGroup.style.transform = `translate(0px, ${fishYOffset}px) rotate(0deg)`;
+      ecoFishGroup.style.transform = `translate(0px, 0px) rotate(0deg)`;
     }
     if (ecoBubblesGroup) ecoBubblesGroup.style.display = 'block';
     if (ecoFishPill) {
       ecoFishPill.className = 'eco-status-pill green-pill';
-      ecoFishPill.innerHTML = `<span class="status-dot green"></span><span>Air Normal (${levelAir.toFixed(1)}%): Ikan Sehat & Aktif</span>`;
+      ecoFishPill.innerHTML = `<span class="status-dot green"></span><span>Air Normal (${suhuAir.toFixed(1)}&deg;C): Ikan Sehat & Aktif 🐟</span>`;
     }
   }
 
-  // ================= 2. KONDISI TANAMAN (TDS & PLANTS) =================
-  const leafLeft = document.getElementById('eco-leaf-left');
-  const leafRight = document.getElementById('eco-leaf-right');
-  const leafCenter = document.getElementById('eco-leaf-center');
+  // ================= 2. KONDISI TANAMAN (TDS NUTRISI & KETINGGIAN AIR) =================
   const ecoPlantPill = document.getElementById('eco-plant-status-pill');
+  const ecoPlantWaterPath = document.getElementById('eco-plant-water-path');
+  const leafColorTip = document.getElementById('leaf-color-tip');
+  const leafColorMid = document.getElementById('leaf-color-mid');
+  const leafColorBase = document.getElementById('leaf-color-base');
+  const leafSideTip = document.getElementById('leaf-side-tip');
+  const leafSideMid = document.getElementById('leaf-side-mid');
+  const leafSideBase = document.getElementById('leaf-side-base');
 
+  // A. Ketinggian wadah air nutrisi tanaman mengikuti levelAir % (Y: 48 sampai 92)
+  const nutrientY = Math.max(48, Math.min(92, Math.round(92 - (levelAir * 0.44))));
+  if (ecoPlantWaterPath) {
+    ecoPlantWaterPath.setAttribute('d', `M 0 ${nutrientY} Q 60 ${nutrientY - 4} 120 ${nutrientY} T 240 ${nutrientY - 3} L 240 100 L 0 100 Z`);
+  }
+
+  // B. Warna Daun mengikuti Kepekatan Nutrisi TDS
   if (tdsVal < 400) {
-    if (leafLeft) leafLeft.setAttribute('fill', '#D97706');
-    if (leafRight) leafRight.setAttribute('fill', '#F59E0B');
-    if (leafCenter) leafCenter.setAttribute('fill', '#FBBF24');
-    if (ecoPlantPill) {
-      ecoPlantPill.className = 'eco-status-pill amber-pill';
-      ecoPlantPill.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><span>Nutrisi Rendah (${tdsVal} PPM): Lambat</span>`;
-    }
+    // Nutrisi Rendah (Kuning Pucat Alami)
+    if (leafColorTip) leafColorTip.setAttribute('stop-color', '#FDE047');
+    if (leafColorMid) leafColorMid.setAttribute('stop-color', '#EAB308');
+    if (leafColorBase) leafColorBase.setAttribute('stop-color', '#854D0E');
+    if (leafSideTip) leafSideTip.setAttribute('stop-color', '#FEF08A');
+    if (leafSideMid) leafSideMid.setAttribute('stop-color', '#CA8A04');
+    if (leafSideBase) leafSideBase.setAttribute('stop-color', '#713F12');
   } else if (tdsVal <= 900) {
-    if (leafLeft) leafLeft.setAttribute('fill', '#10B981');
-    if (leafRight) leafRight.setAttribute('fill', '#059669');
-    if (leafCenter) leafCenter.setAttribute('fill', '#34D399');
-    if (ecoPlantPill) {
-      ecoPlantPill.className = 'eco-status-pill green-pill';
-      ecoPlantPill.innerHTML = `<span class="status-dot green"></span><span>Nutrisi Optimal (${tdsVal} PPM): Subur</span>`;
-    }
+    // Nutrisi Optimal (Hijau Segar Subur Berkilau)
+    if (leafColorTip) leafColorTip.setAttribute('stop-color', '#34D399');
+    if (leafColorMid) leafColorMid.setAttribute('stop-color', '#10B981');
+    if (leafColorBase) leafColorBase.setAttribute('stop-color', '#065F46');
+    if (leafSideTip) leafSideTip.setAttribute('stop-color', '#6EE7B7');
+    if (leafSideMid) leafSideMid.setAttribute('stop-color', '#059669');
+    if (leafSideBase) leafSideBase.setAttribute('stop-color', '#064E3B');
   } else {
-    if (leafLeft) leafLeft.setAttribute('fill', '#DC2626');
-    if (leafRight) leafRight.setAttribute('fill', '#B91C1C');
-    if (leafCenter) leafCenter.setAttribute('fill', '#EF4444');
-    if (ecoPlantPill) {
+    // Nutrisi Pekat (Merah Terbakar)
+    if (leafColorTip) leafColorTip.setAttribute('stop-color', '#F87171');
+    if (leafColorMid) leafColorMid.setAttribute('stop-color', '#DC2626');
+    if (leafColorBase) leafColorBase.setAttribute('stop-color', '#7F1D1D');
+    if (leafSideTip) leafSideTip.setAttribute('stop-color', '#FCA5A5');
+    if (leafSideMid) leafSideMid.setAttribute('stop-color', '#B91C1C');
+    if (leafSideBase) leafSideBase.setAttribute('stop-color', '#450A0A');
+  }
+
+  // C. Keterangan Status Terpadu (TDS Nutrisi & Ketinggian Air SINKRON dengan Kotak TDS)
+  if (ecoPlantPill) {
+    if (levelAir < 30.0) {
       ecoPlantPill.className = 'eco-status-pill red-pill';
-      ecoPlantPill.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><span>Nutrisi Pekat (${tdsVal} PPM): Terbakar</span>`;
+      const nutrisiLabel = tdsVal < 400 ? 'Nutrisi Rendah' : (tdsVal > 900 ? 'Nutrisi Pekat' : 'Nutrisi Optimal');
+      ecoPlantPill.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><span>Air Kritis (${levelAir.toFixed(1)}%) • ${nutrisiLabel} (${tdsVal} PPM)</span>`;
+    } else if (tdsVal < 400) {
+      ecoPlantPill.className = 'eco-status-pill amber-pill';
+      ecoPlantPill.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><span>Nutrisi Rendah (${tdsVal} PPM) • Air: ${levelAir.toFixed(1)}%</span>`;
+    } else if (tdsVal > 900) {
+      ecoPlantPill.className = 'eco-status-pill red-pill';
+      ecoPlantPill.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><span>Nutrisi Pekat (${tdsVal} PPM) • Air: ${levelAir.toFixed(1)}% ⚠️</span>`;
+    } else {
+      ecoPlantPill.className = 'eco-status-pill green-pill';
+      ecoPlantPill.innerHTML = `<span class="status-dot green"></span><span>Nutrisi Optimal (${tdsVal} PPM) • Air: ${levelAir.toFixed(1)}% 🌿</span>`;
     }
   }
 }
@@ -2204,11 +2355,16 @@ function initPumpScheduler() {
 
       if (!state.pumpSchedules) state.pumpSchedules = [];
 
+      const chIdx = ch - 1;
+      if (state.userControlledRelays) state.userControlledRelays[chIdx] = false;
+      delete lastPumpScheduleState[`sched_ch_${ch}`];
+
       if (editingPumpScheduleIndex >= 0 && state.pumpSchedules[editingPumpScheduleIndex]) {
         state.pumpSchedules[editingPumpScheduleIndex].channel = ch;
         state.pumpSchedules[editingPumpScheduleIndex].name = name;
         state.pumpSchedules[editingPumpScheduleIndex].start = startVal;
         state.pumpSchedules[editingPumpScheduleIndex].end = endVal;
+        state.pumpSchedules[editingPumpScheduleIndex].active = true;
         addNotification('success', 'Jadwal Pompa Diperbarui', `${name} dijadwalkan: Menyala ${startVal} - Mati ${endVal}`);
       } else {
         state.pumpSchedules.push({
@@ -2224,13 +2380,23 @@ function initPumpScheduler() {
       renderPumpSchedules();
       savePumpSchedulesToDB();
       if (modal) modal.classList.remove('active');
-      evaluatePumpSchedules();
+
+      // ⚡ 1. LANGSUNG NYALAKAN RELAY POMPA SEKETIKA (ON = 1)
+      state.relays[chIdx] = 1;
+      if (typeof syncRelayUI === 'function') syncRelayUI();
+      if (window.aquaponicsDB && typeof window.aquaponicsDB.updateRelayState === 'function') {
+        console.log(`⚡ [Pump Schedule Trigger] Langsung menyalakan Relay CH ${ch} (${name})!`);
+        window.aquaponicsDB.updateRelayState(ch, 1);
+      }
+      sendTelegramAlert(`sched_start_ch${ch}_${Date.now()}`, `⏰ <b>[JADWAL OPERASIONAL POMPA DIAKTIFKAN]</b>\n🔌 <b>${name} (CH${ch}):</b> DINYALAKAN (ON) 🟢\n⏱️ <i>Rentang Waktu: ${startVal} s/d ${endVal}</i>`, true);
+
+      lastPumpScheduleState[`sched_ch_${ch}`] = 'RUNNING';
     });
   }
 
   renderPumpSchedules();
   evaluatePumpSchedules();
-  setInterval(evaluatePumpSchedules, 5000);
+  setInterval(evaluatePumpSchedules, 3000);
 }
 
 function savePumpSchedulesToDB() {
@@ -2253,7 +2419,7 @@ function isCurrentTimeInSchedule(startStr, endStr) {
   if (startMin <= endMin) {
     return currMin >= startMin && currMin < endMin;
   } else {
-    // Range crossing midnight (e.g. 20:00 - 05:00)
+    // Range crossing midnight (e.g. 20:00 - 05:00 or 12:00 - 09:00)
     return currMin >= startMin || currMin < endMin;
   }
 }
@@ -2294,9 +2460,20 @@ function renderPumpSchedules() {
 window.deletePumpSchedule = function (index) {
   if (state.pumpSchedules && state.pumpSchedules[index]) {
     const deleted = state.pumpSchedules.splice(index, 1)[0];
+    const ch = deleted.channel;
+    const chIdx = ch - 1;
+    delete lastPumpScheduleState[`sched_ch_${ch}`];
+
+    // Otomatis matikan pompa seketika saat jadwalnya dihapus
+    state.relays[chIdx] = 0;
+    if (typeof syncRelayUI === 'function') syncRelayUI();
+    if (window.aquaponicsDB && typeof window.aquaponicsDB.updateRelayState === 'function') {
+      window.aquaponicsDB.updateRelayState(ch, 0);
+    }
+
     renderPumpSchedules();
     savePumpSchedulesToDB();
-    addNotification('info', 'Jadwal Dihapus', `Jadwal ${deleted.name} telah dihapus.`);
+    addNotification('info', 'Jadwal Dihapus', `Jadwal ${deleted.name} telah dihapus & pompa dimatikan.`);
   }
 };
 
@@ -2306,34 +2483,30 @@ function evaluatePumpSchedules() {
   if (!state.pumpSchedules || !Array.isArray(state.pumpSchedules)) return;
 
   state.pumpSchedules.forEach(sched => {
-    if (!sched.active) return;
+    if (sched.active === false) return;
 
     const chIdx = sched.channel - 1;
-    // Jangan ubah status saklar jika telah diatur secara manual oleh pengguna
-    if (state.userControlledRelays && state.userControlledRelays[chIdx]) {
-      return;
-    }
-
     const shouldRun = isCurrentTimeInSchedule(sched.start, sched.end);
     const currentState = state.relays[chIdx] || 0;
     const stateKey = `sched_ch_${sched.channel}`;
 
-    if (shouldRun && currentState === 0 && lastPumpScheduleState[stateKey] !== 'RUNNING') {
+    if (shouldRun && currentState === 0) {
       lastPumpScheduleState[stateKey] = 'RUNNING';
-      console.log(`[Pump Scheduler] Turning ON CH ${sched.channel} (${sched.name}) per schedule (${sched.start} - ${sched.end})`);
+      state.relays[chIdx] = 1;
+      if (typeof syncRelayUI === 'function') syncRelayUI();
       if (window.aquaponicsDB && typeof window.aquaponicsDB.updateRelayState === 'function') {
+        console.log(`[Pump Scheduler] Turning ON CH ${sched.channel} (${sched.name}) per schedule (${sched.start} - ${sched.end})`);
         window.aquaponicsDB.updateRelayState(sched.channel, 1);
-        state.relays[chIdx] = 1;
-        if (typeof syncRelayUI === 'function') syncRelayUI();
       }
     } else if (!shouldRun && currentState === 1 && lastPumpScheduleState[stateKey] === 'RUNNING') {
       lastPumpScheduleState[stateKey] = 'STOPPED';
-      console.log(`[Pump Scheduler] Turning OFF CH ${sched.channel} (${sched.name}) per schedule (${sched.start} - ${sched.end})`);
+      state.relays[chIdx] = 0;
+      if (typeof syncRelayUI === 'function') syncRelayUI();
       if (window.aquaponicsDB && typeof window.aquaponicsDB.updateRelayState === 'function') {
+        console.log(`[Pump Scheduler] Turning OFF CH ${sched.channel} (${sched.name}) per schedule end (${sched.start} - ${sched.end})`);
         window.aquaponicsDB.updateRelayState(sched.channel, 0);
-        state.relays[chIdx] = 0;
-        if (typeof syncRelayUI === 'function') syncRelayUI();
       }
+      sendTelegramAlert(`sched_stop_ch${sched.channel}_${Date.now()}`, `⏰ <b>[JADWAL OPERASIONAL POMPA SELESAI]</b>\n🔌 <b>${sched.name} (CH${sched.channel}):</b> DIMATIKAN (OFF) 🔴\n⏱️ <i>Telah mencapai jam mati: ${sched.end}</i>`, true);
     }
   });
 }
@@ -2343,13 +2516,14 @@ function evaluatePumpSchedules() {
 function initConfigModals() {
   const modal = document.getElementById('config-modal');
 
-  const openCustomModal = (htmlContent, isCompact = false) => {
+  const openCustomModal = (htmlContent, isCompact = false, isWide = false) => {
     const modalCard = modal.querySelector('.modal-card');
     if (modalCard) {
+      modalCard.className = 'modal-card';
       if (isCompact) {
         modalCard.classList.add('modal-card-compact');
-      } else {
-        modalCard.classList.remove('modal-card-compact');
+      } else if (isWide) {
+        modalCard.classList.add('modal-card-wide');
       }
       modalCard.innerHTML = htmlContent;
     }
@@ -2362,6 +2536,35 @@ function initConfigModals() {
 
   window.saveConfigModal = (titleName) => {
     alert(`✅ Pengaturan ${titleName} Berhasil Disimpan!`);
+    window.closeConfigModal();
+  };
+
+  window.saveWiFiConfig = async function() {
+    const ssidInput = document.getElementById('modal-wifi-ssid');
+    const passInput = document.getElementById('modal-wifi-pass');
+    if (!ssidInput || !passInput) return;
+
+    const ssid = ssidInput.value.trim();
+    const pass = passInput.value;
+
+    if (!ssid) {
+      alert("⚠️ Nama WiFi (SSID) tidak boleh kosong!");
+      return;
+    }
+
+    try {
+      localStorage.setItem('aquaponics_wifi_cfg', JSON.stringify({ ssid, pass }));
+    } catch (e) {}
+
+    if (window.aquaponicsDB && typeof window.aquaponicsDB.updateWiFiConfig === 'function') {
+      await window.aquaponicsDB.updateWiFiConfig(ssid, pass);
+    }
+
+    if (typeof addNotification === 'function') {
+      addNotification('success', 'WiFi Berhasil Diperbarui', `SSID: ${ssid}. ESP32 Gateway akan restart dan tersambung otomatis.`);
+    }
+
+    alert(`✅ Kredensial WiFi Berhasil Dikirim ke ESP32!\nSSID: ${ssid}\n\nESP32 Gateway akan otomatis menyimpan ke memori Flash internal (NVS) dan tersambung ke WiFi baru tersebut tanpa perlu upload ulang kode!`);
     window.closeConfigModal();
   };
 
@@ -2386,31 +2589,43 @@ function initConfigModals() {
   const cfgWifi = document.getElementById('cfg-wifi');
   if (cfgWifi) {
     cfgWifi.addEventListener('click', () => {
+      let savedSSID = "HOMESTAYY";
+      let savedPass = "Makanbang";
+      try {
+        const saved = JSON.parse(localStorage.getItem('aquaponics_wifi_cfg') || '{}');
+        if (saved.ssid) savedSSID = saved.ssid;
+        if (saved.pass) savedPass = saved.pass;
+      } catch (e) {}
+
       openCustomModal(`
         <div class="modal-content-styled modal-compact">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-            <h2 class="modal-heading-title" style="font-size: 16px; font-weight: 800; margin: 0; color: var(--text-main);">Pengaturan WiFi</h2>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 class="modal-heading-title" style="font-size: 15.5px; font-weight: 800; margin: 0; color: var(--text-main); display: flex; align-items: center; gap: 7px;">
+              <i class="fa-solid fa-wifi" style="color: var(--primary, #2563EB);"></i> Pengaturan WiFi Gateway
+            </h2>
             <button onclick="closeConfigModal()" style="background: none; border: none; font-size: 20px; color: var(--text-muted, #64748B); cursor: pointer; padding: 0 4px; line-height: 1;" title="Tutup">&times;</button>
           </div>
 
           <div class="form-field-group" style="gap: 4px;">
-            <label class="field-label" style="font-size: 12px; font-weight: 700;">SSID (Nama WiFi)</label>
-            <input type="text" class="modal-input-box" style="padding: 9px 12px; font-size: 13px; border-radius: 10px;" value="HOMESTAY 5G" id="modal-wifi-ssid" />
+            <label class="field-label" style="font-size: 12px; font-weight: 700;">SSID (Nama WiFi / Hotspot)</label>
+            <input type="text" class="modal-input-box" style="padding: 8px 12px; font-size: 13px; border-radius: 10px;" value="${savedSSID}" id="modal-wifi-ssid" placeholder="Nama WiFi / Hotspot" />
           </div>
 
           <div class="form-field-group" style="gap: 4px;">
             <label class="field-label" style="font-size: 12px; font-weight: 700;">Password WiFi</label>
             <div class="input-with-eye">
-              <input type="password" class="modal-input-box" style="padding: 9px 12px; font-size: 13px; border-radius: 10px;" value="Makanbang" id="modal-wifi-pass" />
+              <input type="password" class="modal-input-box" style="padding: 8px 12px; font-size: 13px; border-radius: 10px;" value="${savedPass}" id="modal-wifi-pass" placeholder="Password WiFi" />
               <button class="eye-toggle-btn" style="right: 10px; font-size: 14px;" type="button" onclick="togglePasswordVisibility('modal-wifi-pass', this)">
                 <i class="fa-regular fa-eye"></i>
               </button>
             </div>
           </div>
 
-          <div class="modal-actions-row" style="margin-top: 4px; display: flex; justify-content: flex-end; gap: 8px;">
-            <button class="btn-modal-close" style="padding: 7px 16px; font-size: 12.5px; border-radius: 18px;" onclick="closeConfigModal()">Tutup</button>
-            <button class="btn-modal-save" style="padding: 7px 18px; font-size: 12.5px; border-radius: 18px;" onclick="saveConfigModal('WiFi')">Simpan</button>
+          <div class="modal-actions-row" style="margin-top: 8px; display: flex; justify-content: flex-end; gap: 8px;">
+            <button class="btn-modal-close" style="padding: 7px 16px; font-size: 12.5px; border-radius: 18px;" onclick="closeConfigModal()">Batal</button>
+            <button class="btn-modal-save" style="padding: 7px 18px; font-size: 12.5px; border-radius: 18px; display: inline-flex; align-items: center; gap: 6px;" onclick="saveWiFiConfig()">
+              <i class="fa-solid fa-floppy-disk"></i> Simpan &amp; Terapkan
+            </button>
           </div>
         </div>
       `, true);
@@ -2422,69 +2637,388 @@ function initConfigModals() {
   if (cfgServer) {
     cfgServer.addEventListener('click', () => {
       openCustomModal(`
-        <div class="modal-content-styled">
-          <h2 class="modal-heading-title">2. Pengaturan Server &amp; Gateway</h2>
-          
-          <div class="info-box-blue">
-            <div class="info-box-text">
-              <strong>📡 Tujuan:</strong> Mengatur frekuensi komunikasi nirkabel LoRa E220 915MHz antara Node Sensor dan Gateway ESP32.
-            </div>
+        <div class="modal-content-styled modal-compact">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 class="modal-heading-title" style="font-size: 15.5px; font-weight: 800; margin: 0; color: var(--text-main); display: flex; align-items: center; gap: 7px;">
+              <i class="fa-solid fa-database" style="color: var(--primary, #2563EB);"></i> Pengaturan Server &amp; Gateway
+            </h2>
+            <button onclick="closeConfigModal()" style="background: none; border: none; font-size: 20px; color: var(--text-muted, #64748B); cursor: pointer; padding: 0 4px; line-height: 1;" title="Tutup">&times;</button>
           </div>
 
-          <div class="form-field-group">
-            <label class="field-label">LoRa Channel</label>
-            <input type="number" class="modal-input-box" value="65" />
+          <div class="form-field-group" style="gap: 4px;">
+            <label class="field-label" style="font-size: 12px; font-weight: 700;">LoRa Channel</label>
+            <input type="number" class="modal-input-box" style="padding: 8px 12px; font-size: 13px; border-radius: 10px;" value="65" />
           </div>
 
-          <div class="form-field-group">
-            <label class="field-label">Frekuensi LoRa</label>
-            <input type="text" class="modal-input-box readonly-bg" value="915.125 MHz" readonly />
+          <div class="form-field-group" style="gap: 4px;">
+            <label class="field-label" style="font-size: 12px; font-weight: 700;">Frekuensi LoRa</label>
+            <input type="text" class="modal-input-box readonly-bg" style="padding: 8px 12px; font-size: 13px; border-radius: 10px;" value="915.125 MHz" readonly />
           </div>
 
-          <div class="form-field-group">
-            <label class="field-label">Baud Rate Serial (E220)</label>
-            <input type="text" class="modal-input-box readonly-bg" value="9600 Bps" readonly />
+          <div class="form-field-group" style="gap: 4px;">
+            <label class="field-label" style="font-size: 12px; font-weight: 700;">Baud Rate Serial (E220)</label>
+            <input type="text" class="modal-input-box readonly-bg" style="padding: 8px 12px; font-size: 13px; border-radius: 10px;" value="9600 Bps" readonly />
           </div>
 
-          <div class="modal-actions-row">
-            <button class="btn-modal-close" onclick="closeConfigModal()">Tutup</button>
-            <button class="btn-modal-save" onclick="saveConfigModal('Server')">Simpan</button>
+          <div class="modal-actions-row" style="margin-top: 8px; display: flex; justify-content: flex-end; gap: 8px;">
+            <button class="btn-modal-close" style="padding: 7px 16px; font-size: 12.5px; border-radius: 18px;" onclick="closeConfigModal()">Tutup</button>
+            <button class="btn-modal-save" style="padding: 7px 18px; font-size: 12.5px; border-radius: 18px;" onclick="saveConfigModal('Server')">Simpan</button>
           </div>
         </div>
-      `);
+      `, true);
     });
   }
 
-  // 3. Kalibrasi Sensor
-  const cfgCalib = document.getElementById('cfg-calibration');
-  if (cfgCalib) {
-    cfgCalib.addEventListener('click', () => {
-      openCustomModal(`
-        <div class="modal-content-styled">
-          <h2 class="modal-heading-title">3. Kalibrasi Sensor</h2>
+  // 3. Kalibrasi Multi-Sensor Lengkap (Live In-App Calibration)
+  window.saveSensorCalibration = function(sensorKey, actualVal) {
+    if (!state.calibration) {
+      state.calibration = {
+        tds_factor: 1.0,
+        temp_w_offset: 0.0,
+        temp_a_offset: 0.0,
+        hum_offset: 0.0,
+        level_offset: 0.0,
+        volt_factor: 1.0,
+        volt_offset: 0.0,
+        pond_depth: 100.0
+      };
+    }
+
+    const raw = state.rawTelemetry || {};
+
+    if (sensorKey === 'tds') {
+      const rawVal = raw.tds > 0 ? raw.tds : (state.telemetry.tds > 0 ? state.telemetry.tds : 1);
+      const actual = parseFloat(actualVal);
+      if (!isNaN(actual) && rawVal > 0) {
+        state.calibration.tds_factor = parseFloat((actual / rawVal).toFixed(4));
+        if (typeof addNotification === 'function') {
+          addNotification('success', 'Kalibrasi TDS Berhasil', `Faktor TDS: ${state.calibration.tds_factor} (Sensor: ${rawVal} PPM -> Aktual: ${actual} PPM)`);
+        }
+        alert(`✅ Kalibrasi TDS Berhasil Disimpan!\nFaktor Kalibrasi: ${state.calibration.tds_factor}\nNilai Sensor: ${rawVal} PPM -> Nilai Aktual: ${actual} PPM`);
+      } else {
+        alert("⚠️ Masukkan nilai angka aktual TDS yang valid!");
+        return;
+      }
+    } else if (sensorKey === 'temp_w') {
+      const rawVal = raw.suhu_air !== undefined ? raw.suhu_air : state.telemetry.suhu_air;
+      const actual = parseFloat(actualVal);
+      if (!isNaN(actual)) {
+        state.calibration.temp_w_offset = parseFloat((actual - rawVal).toFixed(2));
+        if (typeof addNotification === 'function') {
+          addNotification('success', 'Kalibrasi Suhu Air Berhasil', `Offset Suhu Air: ${state.calibration.temp_w_offset > 0 ? '+' : ''}${state.calibration.temp_w_offset}°C`);
+        }
+        alert(`✅ Kalibrasi Suhu Air Berhasil Disimpan!\nOffset: ${state.calibration.temp_w_offset > 0 ? '+' : ''}${state.calibration.temp_w_offset}°C (Sensor: ${rawVal.toFixed(1)}°C -> Aktual: ${actual.toFixed(1)}°C)`);
+      } else {
+        alert("⚠️ Masukkan nilai suhu air aktual yang valid!");
+        return;
+      }
+    } else if (sensorKey === 'temp_a') {
+      const rawVal = raw.suhu_udara !== undefined ? raw.suhu_udara : state.telemetry.suhu_udara;
+      const actual = parseFloat(actualVal);
+      if (!isNaN(actual)) {
+        state.calibration.temp_a_offset = parseFloat((actual - rawVal).toFixed(2));
+        if (typeof addNotification === 'function') {
+          addNotification('success', 'Kalibrasi Suhu Udara Berhasil', `Offset Suhu Udara: ${state.calibration.temp_a_offset > 0 ? '+' : ''}${state.calibration.temp_a_offset}°C`);
+        }
+        alert(`✅ Kalibrasi Suhu Udara Berhasil Disimpan!\nOffset: ${state.calibration.temp_a_offset > 0 ? '+' : ''}${state.calibration.temp_a_offset}°C`);
+      } else {
+        alert("⚠️ Masukkan nilai suhu udara aktual yang valid!");
+        return;
+      }
+    } else if (sensorKey === 'hum') {
+      const rawVal = raw.kelembaban !== undefined ? raw.kelembaban : state.telemetry.kelembaban;
+      const actual = parseFloat(actualVal);
+      if (!isNaN(actual)) {
+        state.calibration.hum_offset = parseFloat((actual - rawVal).toFixed(1));
+        if (typeof addNotification === 'function') {
+          addNotification('success', 'Kalibrasi Kelembaban Berhasil', `Offset Kelembaban: ${state.calibration.hum_offset > 0 ? '+' : ''}${state.calibration.hum_offset}%`);
+        }
+        alert(`✅ Kalibrasi Kelembaban Berhasil Disimpan!\nOffset: ${state.calibration.hum_offset > 0 ? '+' : ''}${state.calibration.hum_offset}%`);
+      } else {
+        alert("⚠️ Masukkan nilai kelembaban aktual yang valid!");
+        return;
+      }
+    } else if (sensorKey === 'level') {
+      const rawVal = raw.level_air !== undefined ? raw.level_air : state.telemetry.level_air;
+      const actual = parseFloat(actualVal);
+      if (!isNaN(actual)) {
+        state.calibration.level_offset = parseFloat((actual - rawVal).toFixed(1));
+        if (typeof addNotification === 'function') {
+          addNotification('success', 'Kalibrasi Level Air Berhasil', `Offset Level Air: ${state.calibration.level_offset > 0 ? '+' : ''}${state.calibration.level_offset}%`);
+        }
+        alert(`✅ Kalibrasi Level Air Berhasil Disimpan!\nOffset: ${state.calibration.level_offset > 0 ? '+' : ''}${state.calibration.level_offset}%`);
+      } else {
+        alert("⚠️ Masukkan nilai level air aktual yang valid!");
+        return;
+      }
+    } else if (sensorKey === 'depth') {
+      const depth = parseFloat(actualVal);
+      if (!isNaN(depth) && depth > 0) {
+        state.calibration.pond_depth = depth;
+        if (typeof addNotification === 'function') {
+          addNotification('success', 'Ukuran Ember Disimpan', `Tinggi Ember: ${depth} cm. Level air otomatis dihitung proporsional.`);
+        }
+        alert(`✅ Ukuran Tinggi Ember Disimpan: ${depth} cm!\nLevel air otomatis dihitung mulai dari 0% (dasar ember ${depth}cm) hingga 100% (air penuh).`);
+      } else {
+        alert("⚠️ Masukkan angka tinggi ember (cm) yang valid!");
+        return;
+      }
+    } else if (sensorKey === 'solar_threshold' || sensorKey === 'volt') {
+      const thresh = parseFloat(actualVal);
+      if (!isNaN(thresh) && thresh > 0 && thresh < 24) {
+        state.calibration.vbat_solar_threshold = thresh;
+        state.calibration.auto_solar_enabled = true;
+        if (typeof addNotification === 'function') {
+          addNotification('success', 'Ambang Panel Surya Disimpan', `Panel surya akan otomatis aktif saat Aki <= ${thresh}V`);
+        }
+        alert(`✅ Ambang Batas Panel Surya Disimpan: ${thresh} Volt!\nSistem otomatis mengaktifkan Relay 1 (Panel Surya) saat tegangan aki drop ke angka <= ${thresh}V.`);
+      } else {
+        alert("⚠️ Masukkan nilai voltase ambang batas (Volt) yang valid (misal: 11.7)!");
+        return;
+      }
+    }
+
+    // Simpan ke localStorage & Firebase
+    try {
+      localStorage.setItem('aquaponics_calibration', JSON.stringify(state.calibration));
+    } catch (e) {}
+
+    if (window.aquaponicsDB && window.aquaponicsDB.db) {
+      window.aquaponicsDB.db.ref('config/calibration').set(state.calibration).catch(() => {});
+    }
+
+    applyCalibrationToTelemetry();
+    if (typeof updateUI === 'function') updateUI();
+    if (typeof window.updateLiveCalibrationBadges === 'function') window.updateLiveCalibrationBadges();
+  };
+
+  window.resetCalibrationToFactory = function() {
+    if (confirm("⚠️ Apakah Anda yakin ingin me-reset SEMUA setelan kalibrasi ke Default Pabrik (Faktor 1.000, Offset 0.0)?")) {
+      state.calibration = {
+        tds_factor: 1.0,
+        temp_w_offset: 0.0,
+        temp_a_offset: 0.0,
+        hum_offset: 0.0,
+        level_offset: 0.0,
+        volt_factor: 1.0,
+        volt_offset: 0.0,
+        pond_depth: 100.0
+      };
+      try {
+        localStorage.setItem('aquaponics_calibration', JSON.stringify(state.calibration));
+      } catch (e) {}
+
+      if (window.aquaponicsDB && window.aquaponicsDB.db) {
+        window.aquaponicsDB.db.ref('config/calibration').set(state.calibration).catch(() => {});
+      }
+
+      applyCalibrationToTelemetry();
+      if (typeof updateUI === 'function') updateUI();
+      if (typeof addNotification === 'function') {
+        addNotification('info', 'Reset Pabrik Berhasil', 'Semua sensor dikembalikan ke kalibrasi default pabrik.');
+      }
+      if (typeof window.updateLiveCalibrationBadges === 'function') {
+        window.updateLiveCalibrationBadges();
+      }
+      alert("🔄 Semua parameter sensor telah berhasil di-reset ke setelan awal pabrik!");
+    }
+  };
+
+  window.renderCalibrationModalHTML = function() {
+    const cal = state.calibration || {
+      tds_factor: 1.0,
+      temp_w_offset: 0.0,
+      temp_a_offset: 0.0,
+      hum_offset: 0.0,
+      level_offset: 0.0,
+      volt_factor: 1.0,
+      pond_depth: 100.0
+    };
+    const raw = state.rawTelemetry || {
+      tds: state.telemetry.tds || 0,
+      suhu_air: state.telemetry.suhu_air || 0,
+      suhu_udara: state.telemetry.suhu_udara || 0,
+      kelembaban: state.telemetry.kelembaban || 0,
+      level_air: state.telemetry.level_air || 0,
+      voltase_aki: state.telemetry.voltase_aki || 0
+    };
+
+    return `
+      <div class="calib-compact-modal">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h2 style="font-size: 15.5px; font-weight: 800; margin: 0; color: var(--text-main); display: flex; align-items: center; gap: 7px;">
+            <i class="fa-solid fa-sliders" style="color: var(--primary, #2563EB);"></i> Kalibrasi Parameter Sensor
+          </h2>
+          <button onclick="closeConfigModal()" style="background: none; border: none; font-size: 20px; color: var(--text-muted, #64748B); cursor: pointer; padding: 0 4px; line-height: 1;" title="Tutup">&times;</button>
+        </div>
+
+        <div class="calib-procedure-note">
+          <i class="fa-solid fa-clipboard-check" style="font-size: 13px; color: #16A34A; flex-shrink: 0;"></i>
+          <div><strong>Prosedur Pengujian:</strong> Celupkan sensor &amp; alat ukur standar pada sampel yang sama &rarr; Masukkan nilai pembacaan alat standar &rarr; Klik ikon <i class="fa-solid fa-floppy-disk" style="color: #2563EB;"></i> untuk menyimpan.</div>
+        </div>
+
+        <div class="calib-dense-grid">
           
-          <div class="info-box-blue">
-            <div class="info-box-text">
-              <strong>⚖️ Tujuan:</strong> Mengatur offset dan faktor pengali kalibrasi untuk sensor TDS Analog dan Ultrasonik AJ-SR04M.
+          <!-- 1. SENSOR TDS -->
+          <div class="calib-dense-card">
+            <div class="calib-meta-left">
+              <span class="calib-sensor-name"><i class="fa-solid fa-flask" style="color: #06B6D4;"></i> TDS Air</span>
+              <span class="calib-live-text" id="calib-live-tds"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${raw.tds !== undefined ? raw.tds : state.telemetry.tds} PPM</span>
+            </div>
+            <div class="calib-action-center">
+              <input type="number" id="calib-inp-tds" class="calib-compact-inp" placeholder="Nilai Aktual" />
+              <button class="calib-icon-btn" title="Simpan Kalibrasi TDS" onclick="saveSensorCalibration('tds', document.getElementById('calib-inp-tds').value)">
+                <i class="fa-solid fa-floppy-disk"></i>
+              </button>
+            </div>
+            <div class="calib-badge-right" id="calib-stat-tds">
+              Faktor: <strong>${(cal.tds_factor !== undefined ? cal.tds_factor : 1.0).toFixed(3)}</strong>
             </div>
           </div>
 
-          <div class="form-field-group">
-            <label class="field-label">Faktor Kalibrasi TDS Analog</label>
-            <input type="number" step="0.01" class="modal-input-box" value="1.00" />
+          <!-- 2. SENSOR SUHU AIR -->
+          <div class="calib-dense-card">
+            <div class="calib-meta-left">
+              <span class="calib-sensor-name"><i class="fa-solid fa-temperature-three-quarters" style="color: #2563EB;"></i> Suhu Air</span>
+              <span class="calib-live-text" id="calib-live-tempw"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(raw.suhu_air !== undefined ? raw.suhu_air : state.telemetry.suhu_air).toFixed(1)}°C</span>
+            </div>
+            <div class="calib-action-center">
+              <input type="number" step="0.1" id="calib-inp-tempw" class="calib-compact-inp" placeholder="Nilai Aktual" />
+              <button class="calib-icon-btn" title="Simpan Kalibrasi Suhu Air" onclick="saveSensorCalibration('temp_w', document.getElementById('calib-inp-tempw').value)">
+                <i class="fa-solid fa-floppy-disk"></i>
+              </button>
+            </div>
+            <div class="calib-badge-right" id="calib-stat-tempw">
+              Offset: <strong>${(cal.temp_w_offset >= 0 ? '+' : '')}${(cal.temp_w_offset || 0).toFixed(2)}°C</strong>
+            </div>
           </div>
 
-          <div class="form-field-group">
-            <label class="field-label">Kedalaman Kolam Baseline (Ultrasonik cm)</label>
-            <input type="number" class="modal-input-box" value="100" />
+          <!-- 3. SENSOR SUHU UDARA -->
+          <div class="calib-dense-card">
+            <div class="calib-meta-left">
+              <span class="calib-sensor-name"><i class="fa-solid fa-sun" style="color: #F59E0B;"></i> Suhu Udara</span>
+              <span class="calib-live-text" id="calib-live-tempa"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(raw.suhu_udara !== undefined ? raw.suhu_udara : state.telemetry.suhu_udara).toFixed(1)}°C</span>
+            </div>
+            <div class="calib-action-center">
+              <input type="number" step="0.1" id="calib-inp-tempa" class="calib-compact-inp" placeholder="Nilai Aktual" />
+              <button class="calib-icon-btn" title="Simpan Kalibrasi Suhu Udara" onclick="saveSensorCalibration('temp_a', document.getElementById('calib-inp-tempa').value)">
+                <i class="fa-solid fa-floppy-disk"></i>
+              </button>
+            </div>
+            <div class="calib-badge-right" id="calib-stat-tempa">
+              Offset: <strong>${(cal.temp_a_offset >= 0 ? '+' : '')}${(cal.temp_a_offset || 0).toFixed(2)}°C</strong>
+            </div>
           </div>
 
-          <div class="modal-actions-row">
-            <button class="btn-modal-close" onclick="closeConfigModal()">Tutup</button>
-            <button class="btn-modal-save" onclick="saveConfigModal('Kalibrasi')">Simpan</button>
+          <!-- 4. SENSOR KELEMBABAN -->
+          <div class="calib-dense-card">
+            <div class="calib-meta-left">
+              <span class="calib-sensor-name"><i class="fa-solid fa-droplet" style="color: #10B981;"></i> Kelembaban</span>
+              <span class="calib-live-text" id="calib-live-hum"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${Math.round(raw.kelembaban !== undefined ? raw.kelembaban : state.telemetry.kelembaban)}%</span>
+            </div>
+            <div class="calib-action-center">
+              <input type="number" id="calib-inp-hum" class="calib-compact-inp" placeholder="Nilai Aktual" />
+              <button class="calib-icon-btn" title="Simpan Kalibrasi Kelembaban" onclick="saveSensorCalibration('hum', document.getElementById('calib-inp-hum').value)">
+                <i class="fa-solid fa-floppy-disk"></i>
+              </button>
+            </div>
+            <div class="calib-badge-right" id="calib-stat-hum">
+              Offset: <strong>${(cal.hum_offset >= 0 ? '+' : '')}${(cal.hum_offset || 0).toFixed(1)}%</strong>
+            </div>
           </div>
+
+          <!-- 5. SENSOR LEVEL AIR (UKURAN EMBER) -->
+          <div class="calib-dense-card">
+            <div class="calib-meta-left">
+              <span class="calib-sensor-name"><i class="fa-solid fa-water" style="color: #3B82F6;"></i> Level Air (Ember)</span>
+              <span class="calib-live-text" id="calib-live-level"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(state.telemetry.level_air || 0).toFixed(1)}%</span>
+            </div>
+            <div class="calib-action-center">
+              <input type="number" id="calib-inp-depth" class="calib-compact-inp" placeholder="Tinggi Ember (cm)" value="${cal.pond_depth || 40}" />
+              <button class="calib-icon-btn" title="Simpan Ukuran Ember" onclick="saveSensorCalibration('depth', document.getElementById('calib-inp-depth').value)">
+                <i class="fa-solid fa-floppy-disk"></i>
+              </button>
+            </div>
+            <div class="calib-badge-right" id="calib-stat-level">
+              Ember: <strong>${cal.pond_depth || 40}cm</strong>
+            </div>
+          </div>
+
+          <!-- 6. SENSOR VOLTASE & AUTO PANEL SURYA -->
+          <div class="calib-dense-card">
+            <div class="calib-meta-left">
+              <span class="calib-sensor-name"><i class="fa-solid fa-car-battery" style="color: #8B5CF6;"></i> Auto Panel (Aki)</span>
+              <span class="calib-live-text" id="calib-live-volt"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(state.telemetry.voltase_aki || 0).toFixed(2)}V</span>
+            </div>
+            <div class="calib-action-center">
+              <input type="number" step="0.1" id="calib-inp-solar" class="calib-compact-inp" placeholder="Ambang (V)" value="${cal.vbat_solar_threshold || 11.7}" />
+              <button class="calib-icon-btn" title="Simpan Ambang Auto Panel Surya" onclick="saveSensorCalibration('solar_threshold', document.getElementById('calib-inp-solar').value)">
+                <i class="fa-solid fa-floppy-disk"></i>
+              </button>
+            </div>
+            <div class="calib-badge-right" id="calib-stat-volt">
+              Auto: <strong>&le;${cal.vbat_solar_threshold || 11.7}V</strong>
+            </div>
+          </div>
+
         </div>
-      `);
+
+        <div class="calib-modal-footer">
+          <button class="btn-reset-compact" onclick="resetCalibrationToFactory()">
+            <i class="fa-solid fa-rotate-left"></i> Reset Default Pabrik
+          </button>
+          <button class="btn-close-compact" onclick="closeConfigModal()">Tutup</button>
+        </div>
+      </div>
+    `;
+  };
+
+  window.updateLiveCalibrationBadges = function() {
+    const raw = state.rawTelemetry || {};
+    const cal = state.calibration || {};
+
+    const elTds = document.getElementById('calib-live-tds');
+    if (elTds) elTds.innerHTML = `<i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${raw.tds !== undefined ? raw.tds : state.telemetry.tds} PPM`;
+
+    const elTempW = document.getElementById('calib-live-tempw');
+    if (elTempW) elTempW.innerHTML = `<i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(raw.suhu_air !== undefined ? raw.suhu_air : state.telemetry.suhu_air).toFixed(1)}°C`;
+
+    const elTempA = document.getElementById('calib-live-tempa');
+    if (elTempA) elTempA.innerHTML = `<i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(raw.suhu_udara !== undefined ? raw.suhu_udara : state.telemetry.suhu_udara).toFixed(1)}°C`;
+
+    const elHum = document.getElementById('calib-live-hum');
+    if (elHum) elHum.innerHTML = `<i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${Math.round(raw.kelembaban !== undefined ? raw.kelembaban : state.telemetry.kelembaban)}%`;
+
+    const elLevel = document.getElementById('calib-live-level');
+    if (elLevel) elLevel.innerHTML = `<i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(state.telemetry.level_air || 0).toFixed(1)}%`;
+
+    const elVolt = document.getElementById('calib-live-volt');
+    if (elVolt) elVolt.innerHTML = `<i class="fa-solid fa-circle" style="font-size: 5px;"></i> ${(state.telemetry.voltase_aki || 0).toFixed(2)}V`;
+
+    // Status badges
+    const stTds = document.getElementById('calib-stat-tds');
+    if (stTds) stTds.innerHTML = `Faktor: <strong>${(cal.tds_factor !== undefined ? cal.tds_factor : 1.0).toFixed(3)}</strong>`;
+
+    const stTempW = document.getElementById('calib-stat-tempw');
+    if (stTempW) stTempW.innerHTML = `Offset: <strong>${(cal.temp_w_offset >= 0 ? '+' : '')}${(cal.temp_w_offset || 0).toFixed(2)}°C</strong>`;
+
+    const stTempA = document.getElementById('calib-stat-tempa');
+    if (stTempA) stTempA.innerHTML = `Offset: <strong>${(cal.temp_a_offset >= 0 ? '+' : '')}${(cal.temp_a_offset || 0).toFixed(2)}°C</strong>`;
+
+    const stHum = document.getElementById('calib-stat-hum');
+    if (stHum) stHum.innerHTML = `Offset: <strong>${(cal.hum_offset >= 0 ? '+' : '')}${(cal.hum_offset || 0).toFixed(1)}%</strong>`;
+
+    const stLevel = document.getElementById('calib-stat-level');
+    if (stLevel) stLevel.innerHTML = `Ember: <strong>${cal.pond_depth || 40}cm</strong>`;
+
+    const stVolt = document.getElementById('calib-stat-volt');
+    if (stVolt) stVolt.innerHTML = `Auto: <strong>&le;${cal.vbat_solar_threshold || 11.7}V</strong>`;
+  };
+
+  const cfgCalib = document.getElementById('cfg-calibration');
+  if (cfgCalib) {
+    cfgCalib.addEventListener('click', () => {
+      openCustomModal(renderCalibrationModalHTML(), false, true);
     });
   }
 
@@ -2493,47 +3027,45 @@ function initConfigModals() {
   if (cfgFirebase) {
     cfgFirebase.addEventListener('click', () => {
       openCustomModal(`
-        <div class="modal-content-styled">
-          <h2 class="modal-heading-title">4. Integrasi Firebase ⭐</h2>
-          
-          <div class="info-box-amber">
-            <div class="info-box-text">
-              <strong>📍 Ambil kredensial dari:</strong><br/>
-              <code class="code-path">Firebase Console &gt; Project Settings &gt; General &gt; Your apps &gt; Web</code>
-            </div>
+        <div class="modal-content-styled modal-compact">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 class="modal-heading-title" style="font-size: 15.5px; font-weight: 800; margin: 0; color: var(--text-main); display: flex; align-items: center; gap: 7px;">
+              <i class="fa-solid fa-fire text-amber"></i> Integrasi Firebase Realtime
+            </h2>
+            <button onclick="closeConfigModal()" style="background: none; border: none; font-size: 20px; color: var(--text-muted, #64748B); cursor: pointer; padding: 0 4px; line-height: 1;" title="Tutup">&times;</button>
           </div>
 
-          <div class="form-field-group">
-            <label class="field-label">Project ID</label>
-            <input type="text" class="modal-input-box" value="aquaponics-system-8d6f6" />
+          <div class="form-field-group" style="gap: 4px;">
+            <label class="field-label" style="font-size: 12px; font-weight: 700;">Project ID</label>
+            <input type="text" class="modal-input-box" style="padding: 8px 12px; font-size: 13px; border-radius: 10px;" value="aquaponics-system-8d6f6" />
           </div>
 
-          <div class="form-field-group">
-            <label class="field-label">Web API Key</label>
-            <input type="text" class="modal-input-box" value="AlzaSyDAnrIQ6_gihFgcep-Pu3dz3IqxCWBoCDo" />
+          <div class="form-field-group" style="gap: 4px;">
+            <label class="field-label" style="font-size: 12px; font-weight: 700;">Web API Key</label>
+            <input type="text" class="modal-input-box" style="padding: 8px 12px; font-size: 13px; border-radius: 10px;" value="AlzaSyDAnrIQ6_gihFgcep-Pu3dz3IqxCWBoCDo" />
           </div>
 
-          <div class="form-field-group">
-            <label class="field-label">Database URL</label>
-            <input type="text" class="modal-input-box" value="https://aquaponics-system-8d6f6-default-rtdb.asia-s" />
+          <div class="form-field-group" style="gap: 4px;">
+            <label class="field-label" style="font-size: 12px; font-weight: 700;">Database URL</label>
+            <input type="text" class="modal-input-box" style="padding: 8px 12px; font-size: 13px; border-radius: 10px;" value="https://aquaponics-system-8d6f6-default-rtdb.asia-s" />
           </div>
 
-          <div class="form-field-group">
-            <label class="field-label">Storage Bucket</label>
-            <input type="text" class="modal-input-box" value="aquaponics-system-8d6f6.firebasestorage.app" />
+          <div class="form-field-group" style="gap: 4px;">
+            <label class="field-label" style="font-size: 12px; font-weight: 700;">Storage Bucket</label>
+            <input type="text" class="modal-input-box" style="padding: 8px 12px; font-size: 13px; border-radius: 10px;" value="aquaponics-system-8d6f6.firebasestorage.app" />
           </div>
 
-          <div class="form-field-group">
-            <label class="field-label">Messaging Sender ID</label>
-            <input type="text" class="modal-input-box" value="666440506386" />
+          <div class="form-field-group" style="gap: 4px;">
+            <label class="field-label" style="font-size: 12px; font-weight: 700;">Messaging Sender ID</label>
+            <input type="text" class="modal-input-box" style="padding: 8px 12px; font-size: 13px; border-radius: 10px;" value="666440506386" />
           </div>
 
-          <div class="modal-actions-row">
-            <button class="btn-modal-close" onclick="closeConfigModal()">Tutup</button>
-            <button class="btn-modal-save" onclick="saveConfigModal('Firebase')">Simpan</button>
+          <div class="modal-actions-row" style="margin-top: 8px; display: flex; justify-content: flex-end; gap: 8px;">
+            <button class="btn-modal-close" style="padding: 7px 16px; font-size: 12.5px; border-radius: 18px;" onclick="closeConfigModal()">Tutup</button>
+            <button class="btn-modal-save" style="padding: 7px 18px; font-size: 12.5px; border-radius: 18px;" onclick="saveConfigModal('Firebase')">Simpan</button>
           </div>
         </div>
-      `);
+      `, true);
     });
   }
 
@@ -2542,41 +3074,35 @@ function initConfigModals() {
   if (cfgNotif) {
     cfgNotif.addEventListener('click', () => {
       openCustomModal(`
-        <div class="modal-content-styled">
-          <h2 class="modal-heading-title">5. Pengaturan Notifikasi (Telegram Bot)</h2>
-          
-          <div class="info-box-green">
-            <div class="info-box-text">
-              <strong>🎆 Notifikasi Telegram Bot (Instan &amp; Gratis):</strong><br/>
-              Mengirim pesan alarm darurat langsung ke Telegram HP Anda saat air kolam kritis atau suhu/TDS tidak normal.
-            </div>
+        <div class="modal-content-styled modal-compact">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 class="modal-heading-title" style="font-size: 15.5px; font-weight: 800; margin: 0; color: var(--text-main); display: flex; align-items: center; gap: 7px;">
+              <i class="fa-solid fa-paper-plane" style="color: var(--primary, #2563EB);"></i> Pengaturan Notifikasi Telegram
+            </h2>
+            <button onclick="closeConfigModal()" style="background: none; border: none; font-size: 20px; color: var(--text-muted, #64748B); cursor: pointer; padding: 0 4px; line-height: 1;" title="Tutup">&times;</button>
           </div>
 
-          <div class="checkbox-container-box">
-            <span class="field-label">Enable Notifikasi Telegram (On / Off)</span>
+          <div class="checkbox-container-box" style="margin-bottom: 8px;">
+            <span class="field-label" style="font-size: 12px; font-weight: 700;">Status Notifikasi Telegram</span>
             <input type="checkbox" class="modal-checkbox-custom" checked />
           </div>
 
-          <div class="form-field-group">
-            <label class="field-label">Bot Token Telegram</label>
-            <input type="text" class="modal-input-box" value="8758597072:AAEe0ymSD2RfdICAoF4EoCflpf2oe" />
+          <div class="form-field-group" style="gap: 4px;">
+            <label class="field-label" style="font-size: 12px; font-weight: 700;">Bot Token Telegram</label>
+            <input type="text" class="modal-input-box" style="padding: 8px 12px; font-size: 13px; border-radius: 10px;" value="8758597072:AAEe0ymSD2RfdICAoF4EoCflpf2oe" />
           </div>
 
-          <div class="form-field-group">
-            <label class="field-label">Chat ID Telegram Anda</label>
-            <input type="text" class="modal-input-box" value="7207067918" />
+          <div class="form-field-group" style="gap: 4px;">
+            <label class="field-label" style="font-size: 12px; font-weight: 700;">Chat ID Telegram</label>
+            <input type="text" class="modal-input-box" style="padding: 8px 12px; font-size: 13px; border-radius: 10px;" value="7207067918" />
           </div>
 
-          <button class="btn-outline-blue width-100 margin-v-10" type="button" onclick="alert('🚀 Pesan uji coba berhasil dikirim ke Telegram!')">
-            🚀 Kirim Notifikasi Uji Coba ke Telegram
-          </button>
-
-          <div class="modal-actions-row">
-            <button class="btn-modal-close" onclick="closeConfigModal()">Tutup</button>
-            <button class="btn-modal-save" onclick="saveConfigModal('Notifikasi')">Simpan</button>
+          <div class="modal-actions-row" style="margin-top: 8px; display: flex; justify-content: flex-end; gap: 8px;">
+            <button class="btn-modal-close" style="padding: 7px 16px; font-size: 12.5px; border-radius: 18px;" onclick="closeConfigModal()">Tutup</button>
+            <button class="btn-modal-save" style="padding: 7px 18px; font-size: 12.5px; border-radius: 18px;" onclick="saveConfigModal('Notifikasi')">Simpan</button>
           </div>
         </div>
-      `);
+      `, true);
     });
   }
 

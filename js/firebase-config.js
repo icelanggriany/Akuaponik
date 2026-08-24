@@ -117,9 +117,9 @@ class AquaponicsFirebase {
   // 2. Kirim perintah kontrol (Relay / Feeder) dengan Monotonic Sequence ID
   async sendCommand(commandPayload) {
     try {
-      this.seqCounter = (this.seqCounter || Math.floor(Date.now() % 1000000)) + 1;
-      commandPayload.seq = this.seqCounter;
-      commandPayload.ts = Date.now();
+      const nowTs = Date.now();
+      commandPayload.seq = nowTs;
+      commandPayload.ts = nowTs;
 
       // OPSI A: Kirim via Realtime WebSocket SDK (< 20ms)
       if (this.hasSDK && this.db) {
@@ -244,6 +244,50 @@ class AquaponicsFirebase {
   async deleteSchedule(index) {
     console.log("[Firebase] Schedule removed at index:", index);
     return true;
+  }
+
+  // 5c. Perbarui Konfigurasi WiFi Gateway (Simpan & Reconnect Otomatis)
+  async updateWiFiConfig(ssid, pass) {
+    const payload = {
+      action: "wifi_update",
+      ssid: String(ssid).trim(),
+      pass: String(pass),
+      seq: (this.seqCounter || Math.floor(Date.now() % 1000000)) + 1,
+      ts: Date.now()
+    };
+    this.seqCounter = payload.seq;
+
+    console.log("[Firebase] Sending WiFi update command to ESP32 Gateway:", payload);
+
+    if (this.hasSDK && this.db) {
+      try {
+        await Promise.all([
+          this.db.ref('config/wifi').set({ ssid: payload.ssid, pass: payload.pass, ts: payload.ts }),
+          this.db.ref('control_queue/latest').set(payload),
+          this.db.ref('last_command').set(payload)
+        ]);
+        return true;
+      } catch (err) {
+        console.warn("[Firebase SDK] updateWiFiConfig error:", err);
+      }
+    }
+
+    try {
+      await fetch(`${this.baseUrl}/control_queue/latest.json`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      await fetch(`${this.baseUrl}/config/wifi.json`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ssid: payload.ssid, pass: payload.pass, ts: payload.ts })
+      });
+      return true;
+    } catch (err) {
+      console.warn("[Firebase REST] updateWiFiConfig error:", err);
+      return false;
+    }
   }
 
   // 5b. Berlangganan status resmi relay
