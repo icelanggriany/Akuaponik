@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Monitoring Akuaponik</title>
+  <title>Smart Aquaponics</title>
 
   <!-- Google Fonts: Inter (Formal Sans-Serif) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -23,10 +23,136 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="css/style.css?v=3.6.0" />
+  <link rel="stylesheet" href="css/style.css?v=3.9.4" />
 </head>
 
 <body class="light-mode">
+
+  <!-- ================= AUTHENTICATION SCREEN (LOGIN & REGISTER) ================= -->
+  <div class="auth-screen-overlay" id="auth-screen-overlay">
+    <div class="auth-ambient-glow glow-1"></div>
+    <div class="auth-ambient-glow glow-2"></div>
+    
+    <div class="auth-card-container">
+      <!-- Top Brand Header -->
+      <div class="auth-brand-header">
+        <div class="auth-logo-badge">
+          <svg viewBox="0 0 40 40" class="auth-svg-logo">
+            <path d="M 20 4 L 36 34 L 4 34 Z" fill="none" stroke="#2563EB" stroke-width="4" stroke-linejoin="round" />
+            <path d="M 20 12 L 28 28 L 12 28 Z" fill="#2563EB" opacity="0.25" />
+          </svg>
+        </div>
+        <h1 class="auth-main-title">Smart Aquaponics</h1>
+        <p class="auth-sub-title" id="auth-sub-title">Masuk untuk memantau dan kontrol sistem</p>
+      </div>
+
+      <!-- 1. LOGIN FORM CONTAINER -->
+      <div class="auth-form-box" id="auth-login-box">
+        <form id="form-login-auth" onsubmit="handleAuthLogin(event)" autocomplete="off">
+          <div class="auth-input-group">
+            <label for="login-username"><i class="fa-solid fa-user text-muted"></i> Username / Email</label>
+            <div class="auth-input-wrapper">
+              <i class="fa-solid fa-user-tag auth-field-icon"></i>
+              <input type="text" id="login-username" class="auth-input-field" placeholder="Masukkan username Anda" required />
+            </div>
+          </div>
+
+          <div class="auth-input-group">
+            <label for="login-password"><i class="fa-solid fa-lock text-muted"></i> Kata Sandi</label>
+            <div class="auth-input-wrapper">
+              <i class="fa-solid fa-key auth-field-icon"></i>
+              <input type="password" id="login-password" class="auth-input-field" placeholder="Masukkan kata sandi" required />
+              <button type="button" class="auth-eye-btn" onclick="togglePasswordVisibility('login-password', this)" title="Lihat/Sembunyikan Sandi">
+                <i class="fa-regular fa-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="auth-options-row">
+            <label class="auth-remember-label">
+              <input type="checkbox" id="login-remember" checked />
+              <span>Ingat Saya</span>
+            </label>
+          </div>
+
+          <div class="auth-alert-message" id="login-alert-msg" style="display: none;"></div>
+
+          <button type="submit" class="btn-auth-primary" id="btn-login-submit">
+            <span>Masuk Sekarang</span>
+            <i class="fa-solid fa-arrow-right"></i>
+          </button>
+        </form>
+
+        <div class="auth-footer-prompt">
+          <span>Belum memiliki akun?</span>
+          <button type="button" class="auth-switch-link" onclick="switchAuthView('register')">Daftar Akun Baru</button>
+        </div>
+
+        <div class="auth-copyright">
+          &copy; 2026 Smart Aquaponics. Hak Cipta Dilindungi.
+        </div>
+      </div>
+
+      <!-- 2. REGISTER FORM CONTAINER -->
+      <div class="auth-form-box" id="auth-register-box" style="display: none;">
+        <form id="form-register-auth" onsubmit="handleAuthRegister(event)" autocomplete="off">
+          <div class="auth-input-group">
+            <label for="reg-fullname"><i class="fa-solid fa-id-card text-muted"></i> Nama Lengkap</label>
+            <div class="auth-input-wrapper">
+              <i class="fa-solid fa-address-card auth-field-icon"></i>
+              <input type="text" id="reg-fullname" class="auth-input-field" placeholder="Contoh: admin" required />
+            </div>
+          </div>
+
+          <div class="auth-input-group">
+            <label for="reg-username"><i class="fa-solid fa-user-tag text-muted"></i> Username</label>
+            <div class="auth-input-wrapper">
+              <i class="fa-solid fa-at auth-field-icon"></i>
+              <input type="text" id="reg-username" class="auth-input-field" placeholder="Pilih username (tanpa spasi)" required />
+            </div>
+          </div>
+
+          <div class="auth-input-group">
+            <label for="reg-password"><i class="fa-solid fa-lock text-muted"></i> Kata Sandi</label>
+            <div class="auth-input-wrapper">
+              <i class="fa-solid fa-lock auth-field-icon"></i>
+              <input type="password" id="reg-password" class="auth-input-field" placeholder="Minimal 4 karakter" required />
+              <button type="button" class="auth-eye-btn" onclick="togglePasswordVisibility('reg-password', this)" title="Lihat/Sembunyikan Sandi">
+                <i class="fa-regular fa-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="auth-input-group">
+            <label for="reg-confirm-password"><i class="fa-solid fa-shield-check text-muted"></i> Konfirmasi Kata Sandi</label>
+            <div class="auth-input-wrapper">
+              <i class="fa-solid fa-check-double auth-field-icon"></i>
+              <input type="password" id="reg-confirm-password" class="auth-input-field" placeholder="Ulangi kata sandi Anda" required />
+              <button type="button" class="auth-eye-btn" onclick="togglePasswordVisibility('reg-confirm-password', this)" title="Lihat/Sembunyikan Sandi">
+                <i class="fa-regular fa-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="auth-alert-message" id="reg-alert-msg" style="display: none;"></div>
+
+          <button type="submit" class="btn-auth-primary" id="btn-reg-submit">
+            <span>Daftar Sekarang</span>
+            <i class="fa-solid fa-check"></i>
+          </button>
+        </form>
+
+        <div class="auth-footer-prompt">
+          <span>Sudah memiliki akun?</span>
+          <button type="button" class="auth-switch-link" onclick="switchAuthView('login')">Masuk di Sini</button>
+        </div>
+
+        <div class="auth-copyright">
+          &copy; 2026 Smart Aquaponics. Hak Cipta Dilindungi.
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="dashboard-layout">
 
@@ -68,6 +194,17 @@
 
       <!-- Sidebar Footer -->
       <div class="sidebar-footer">
+        <!-- Active User Profile Card -->
+        <div class="sidebar-user-card" id="sidebar-user-profile">
+          <div class="sidebar-user-avatar">
+            <i class="fa-solid fa-circle-user"></i>
+          </div>
+          <div class="sidebar-user-meta">
+            <span class="sidebar-user-name" id="sidebar-logged-user-name">Administrator</span>
+            <span class="sidebar-user-role">Operator Aktif</span>
+          </div>
+        </div>
+
         <div class="device-status-badge">
           <i class="fa-solid fa-circle dot-online"></i>
           <span>Alat Terhubung (Sangat Baik (Ideal))</span>
@@ -84,7 +221,7 @@
 
       <!-- TOP HEADER -->
       <header class="app-header">
-        <h1 class="page-title" id="header-title-text">Monitoring Akuaponik</h1>
+        <h1 class="page-title" id="header-title-text">Smart Aquaponics</h1>
 
         <div class="header-actions">
           <button class="icon-btn" id="theme-toggle-btn" title="Ganti Tema Mode">
@@ -1451,8 +1588,8 @@
   </div>
 
   <!-- Custom Scripts -->
-  <script src="js/firebase-config.js?v=3.6.0"></script>
-  <script src="js/app.js?v=3.6.0"></script>
+  <script src="js/firebase-config.js?v=3.9.4"></script>
+  <script src="js/app.js?v=3.9.4"></script>
 </body>
 
 </html>

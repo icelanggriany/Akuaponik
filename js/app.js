@@ -36,6 +36,7 @@ if (typeof window !== 'undefined') {
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+  initAuthSystem();
   initNavigation();
   initThemeToggle();
   initNotificationDropdown();
@@ -49,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // State Store
 const state = {
+  currentUser: null,
   activeTab: 'tab-beranda',
   activePeriod: 'harian',
   rawTelemetry: {
@@ -98,7 +100,7 @@ function initNavigation() {
   const manageFeedLink = document.getElementById('manage-feed-link');
 
   const titleMap = {
-    'tab-beranda': 'Monitoring Akuaponik',
+    'tab-beranda': 'Smart Aquaponics',
     'tab-monitoring': 'Monitoring',
     'tab-control': 'Control',
     'tab-config': 'Config'
@@ -1373,16 +1375,21 @@ function initCharts() {
     transitions: {
       active: {
         animation: {
-          duration: 200,
+          duration: 150,
           easing: 'easeOutQuad'
         }
       }
     },
     interaction: {
-      mode: 'nearest',
-      axis: 'x',
+      mode: 'index',
+      intersect: false,
+      axis: 'x'
+    },
+    hover: {
+      mode: 'index',
       intersect: false
     },
+    events: ['mousemove', 'mouseout', 'click', 'touchstart', 'touchmove'],
     onClick: (evt, elements, chart) => {
       if (elements && elements.length > 0) {
         const el = elements[0];
@@ -1406,35 +1413,52 @@ function initCharts() {
       legend: { display: false },
       tooltip: {
         enabled: true,
-        animation: false,
-        backgroundColor: '#1E293B',
-        titleColor: '#F8FAFC',
-        titleFont: { family: 'Inter', size: 12, weight: '700' },
-        bodyColor: '#F8FAFC',
-        bodyFont: { family: 'Inter', size: 12, weight: '500' },
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        mode: 'index',
+        intersect: false,
+        backgroundColor: '#0F172A',
+        titleColor: '#94A3B8',
+        titleFont: { family: 'Inter', size: 11, weight: '600' },
+        bodyColor: '#FFFFFF',
+        bodyFont: { family: 'Inter', size: 13, weight: '700' },
+        borderColor: 'rgba(255, 255, 255, 0.18)',
         borderWidth: 1,
-        cornerRadius: 8,
+        cornerRadius: 10,
         padding: 10,
+        boxPadding: 6,
         usePointStyle: true,
-        boxWidth: 8,
-        boxHeight: 8,
-        boxPadding: 4,
+        displayColors: true,
         callbacks: {
+          title: function (context) {
+            if (!context || !context[0]) return '';
+            return '⏱ Waktu: ' + context[0].label;
+          },
           label: function (context) {
             let label = context.dataset.label || '';
-            if (label) {
-              label += ': ';
-            }
-            if (context.parsed.y !== null && context.parsed.y !== undefined) {
-              const val = context.parsed.y;
+            let val = context.parsed.y;
+            let formattedVal = '';
+            if (val !== null && val !== undefined) {
               if (Number.isInteger(val)) {
-                label += val.toLocaleString('id-ID');
+                formattedVal = val.toLocaleString('id-ID');
               } else {
-                label += val.toFixed(1).replace('.', ',');
+                formattedVal = val.toFixed(1).replace('.', ',');
               }
             }
-            return label;
+            let unit = '';
+            if (label.includes('°C')) unit = ' °C';
+            else if (label.includes('PPM')) unit = ' PPM';
+            else if (label.includes('%')) unit = ' %';
+
+            const cleanName = label.split(' (')[0];
+            return ` ${cleanName}: ${formattedVal}${unit}`;
+          },
+          labelColor: function (context) {
+            const color = context.dataset.borderColor || '#2563EB';
+            return {
+              borderColor: color,
+              backgroundColor: color,
+              borderWidth: 2,
+              borderRadius: 4
+            };
           }
         }
       }
@@ -1449,8 +1473,8 @@ function initCharts() {
       },
       point: {
         radius: 4.5,
-        hoverRadius: 7.5,
-        hitRadius: 20,
+        hoverRadius: 8,
+        hitRadius: 25,
         borderWidth: 2,
         hoverBorderWidth: 3
       }
@@ -3262,67 +3286,48 @@ function initConfigModals() {
     });
   }
 
-  // 6. Tentang Kami (Versi Profesional + Skripsi Lengkap)
+  // 6. Tentang Kami (Judul, Deskripsi Sistem, Fitur Unggulan, Visi Misi, Copyright)
   const cfgAbout = document.getElementById('cfg-about');
   if (cfgAbout) {
     cfgAbout.addEventListener('click', () => {
       openCustomModal(`
         <div class="modal-content-styled about-modal-wrapper" style="gap: 12px; max-height: 85vh; overflow-y: auto; padding-right: 2px;">
-          <!-- ACADEMIC & INSTITUTIONAL HEADER -->
+          <!-- 1. JUDUL & HEADER SISTEM -->
           <div class="academic-modal-header">
             <div>
               <div class="academic-badge-institute">
-                <i class="fa-solid fa-building-columns"></i> Politeknik Negeri Fakfak
+                <i class="fa-solid fa-seedling"></i> SMART AQUAPONICS
               </div>
-              <h2 class="academic-title">HIDROPONIK IOT GATEWAY</h2>
-              <div class="academic-subtitle">Platform Monitoring &amp; Otomasi Akuaponik-Hidroponik Berbasis IoT &bull; Tahun 2026</div>
+              <h2 class="academic-title">Smart Aquaponics</h2>
+              <div class="academic-subtitle">Platform Cerdas Pemantauan Kualitas Air &amp; Kendali Otomatis Kolam</div>
             </div>
             <button onclick="closeConfigModal()" style="background: none; border: none; font-size: 24px; color: var(--text-muted); cursor: pointer; padding: 0 4px; line-height: 1;" title="Tutup">&times;</button>
           </div>
           
-          <!-- 1. DESKRIPSI SINGKAT SISTEM -->
+          <!-- 2. DESKRIPSI SISTEM (KALIMAT YANG MUDAH DIPAHAMI) -->
           <div class="academic-hero-box">
             <div style="display: flex; gap: 12px; align-items: flex-start;">
-              <div class="about-icon-blue" style="width: 42px; height: 42px; font-size: 18px; border-radius: 10px; flex-shrink: 0; background: #2563EB;">
-                <i class="fa-solid fa-seedling"></i>
+              <div class="about-icon-blue" style="width: 42px; height: 42px; font-size: 18px; border-radius: 10px; flex-shrink: 0; background: var(--primary, #2563EB);">
+                <i class="fa-solid fa-circle-info"></i>
               </div>
               <div>
-                <div style="font-size: 12px; font-weight: 800; color: var(--text-main, #1E293B); margin-bottom: 3px;">Gambaran Umum Sistem</div>
-                <p style="font-size: 11.5px; line-height: 1.5; color: var(--text-muted, #475569); margin: 0;">
-                  <strong>Hidroponik IoT Gateway</strong> adalah sistem monitoring dan otomasi cerdas berbasis Internet of Things yang dirancang untuk memantau parameter kualitas air nutrisi serta mikroklimat tanaman secara presisi. Sistem ini mengintegrasikan sensor telemetri presisi, transmisi nirkabel LoRa E220 915 MHz, dan Firebase Realtime Database guna menghadirkan kendali aktuator cerdas serta otomasi kolam dari mana saja secara real-time.
+                <div style="font-size: 12.5px; font-weight: 800; color: var(--text-main, #1E293B); margin-bottom: 4px;">Deskripsi Sistem</div>
+                <p style="font-size: 11.5px; line-height: 1.55; color: var(--text-main, #475569); margin: 0 0 6px 0;">
+                  <strong>Smart Aquaponics</strong> adalah sistem pintar yang menggabungkan budidaya ikan dan tanaman secara otomatis. Sistem ini menghubungkan berbagai sensor di kolam langsung ke internet agar Anda dapat merawat dan memantau kolam dengan sangat mudah dan praktis.
                 </p>
-                <div style="display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap;">
-                  <span class="badge-blue-pill" style="font-size: 9.5px; padding: 2px 8px;">Tugas Akhir 2026</span>
-                  <span class="badge-green-pill" style="font-size: 9.5px; padding: 2px 8px;">LoRa E220 915 MHz</span>
-                  <span class="badge-blue-pill" style="font-size: 9.5px; padding: 2px 8px; background: #F1F5F9; color: #475569;">Firebase Cloud</span>
+                <p style="font-size: 11.5px; line-height: 1.55; color: var(--text-main, #475569); margin: 0;">
+                  Melalui dashboard ini, Anda dapat melihat kondisi air (kadar nutrisi, suhu, dan ketinggian air kolam) secara langsung (real-time). Anda juga dapat menyalakan pompa air, aerator oksigen, hingga memberi makan ikan secara otomatis maupun manual melalui ponsel Anda dari mana saja tanpa harus memeriksa kolam terus-menerus.
+                </p>
+                <div style="display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap;">
+                  <span class="badge-blue-pill" style="font-size: 9.5px; padding: 3px 9px;"><i class="fa-solid fa-wifi"></i> IoT Real-Time</span>
+                  <span class="badge-green-pill" style="font-size: 9.5px; padding: 3px 9px;"><i class="fa-solid fa-microchip"></i> Otomasi Cerdas</span>
+                  <span class="badge-blue-pill" style="font-size: 9.5px; padding: 3px 9px; background: var(--bg-hover, #F1F5F9); color: var(--text-muted, #475569);"><i class="fa-solid fa-mobile-screen"></i> Kontrol Jarak Jauh</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- 2. VISI & MISI -->
-          <div class="academic-vision-box">
-            <div style="font-size: 18px; color: #D97706; flex-shrink: 0; margin-top: 2px;"><i class="fa-solid fa-bullseye"></i></div>
-            <div>
-              <div style="font-size: 11.5px; font-weight: 800; color: #92400E; text-transform: uppercase; letter-spacing: 0.5px;">Visi &amp; Misi</div>
-              <div style="font-size: 11.5px; color: #78350F; line-height: 1.45; margin-top: 2px;">
-                Mewujudkan sistem pertanian hidroponik dan akuaponik modern berbasis teknologi Internet of Things yang efisien, presisi tinggi, terjangkau, dan ramah lingkungan.
-              </div>
-            </div>
-          </div>
-
-          <!-- 3. LAYANAN KAMI -->
-          <div class="academic-services-box">
-            <div style="font-size: 18px; color: #059669; flex-shrink: 0; margin-top: 2px;"><i class="fa-solid fa-hand-holding-hand"></i></div>
-            <div>
-              <div style="font-size: 11.5px; font-weight: 800; color: #065F46; text-transform: uppercase; letter-spacing: 0.5px;">Layanan &amp; Fokus Solusi</div>
-              <div style="font-size: 11.5px; color: #047857; line-height: 1.45; margin-top: 2px;">
-                Kami menyediakan rancang bangun arsitektur perangkat keras IoT terintegrasi, gateway nirkabel jarak jauh LoRa, serta platform web dashboard monitoring dan kendali aktuator cerdas untuk pertanian presisi.
-              </div>
-            </div>
-          </div>
-
-          <!-- 4. FITUR UNGGULAN SISTEM -->
+          <!-- 3. FITUR UNGGULAN -->
           <div class="academic-section-card" style="padding: 12px 14px;">
             <div class="academic-section-title">
               <i class="fa-solid fa-star" style="color: #F59E0B;"></i> Fitur Unggulan Sistem
@@ -3333,31 +3338,31 @@ function initConfigModals() {
                   <i class="fa-solid fa-flask-vial"></i>
                 </div>
                 <div class="academic-feature-text">
-                  <strong>Monitoring Nutrisi PPM &amp; TDS:</strong> Pemantauan kadar kepekatan nutrisi larutan AB Mix secara akurat untuk menjamin kebutuhan nutrisi tanaman terpenuhi optimal.
+                  <strong>Pemantauan Kualitas Air Real-Time:</strong> Mengetahui kadar kepekatan nutrisi tanaman (PPM/TDS) dan suhu air kolam secara akurat agar tanaman tumbuh subur dan ikan tetap sehat.
                 </div>
               </div>
               <div class="academic-feature-item">
                 <div class="academic-feature-icon" style="background: #ECFDF5; color: #059669;">
-                  <i class="fa-solid fa-temperature-three-quarters"></i>
+                  <i class="fa-solid fa-water"></i>
                 </div>
                 <div class="academic-feature-text">
-                  <strong>Monitoring Suhu Air &amp; Udara:</strong> Pengawasan suhu perakaran kolam (DS18B20) serta suhu dan kelembaban udara sekitar (DHT) secara real-time.
+                  <strong>Sensor Ketinggian Air Pintar:</strong> Mengukur ketinggian air kolam secara otomatis guna mencegah luapan air saat hujan atau kekurangan air yang dapat merusak pompa.
                 </div>
               </div>
               <div class="academic-feature-item">
                 <div class="academic-feature-icon" style="background: #EFF6FF; color: #2563EB;">
-                  <i class="fa-solid fa-water"></i>
+                  <i class="fa-solid fa-toggle-on"></i>
                 </div>
                 <div class="academic-feature-text">
-                  <strong>Level Ketinggian Air Kolam:</strong> Sensor ultrasonik mendeteksi persentase volume air secara akurat guna mencegah kekeringan dan proteksi pompa air.
+                  <strong>Kendali Pompa &amp; Aerator Jarak Jauh:</strong> Menghidupkan dan mematikan saklar pompa pembesaran, pompa peremajaan, dan aerator penghasil oksigen hanya dengan satu klik.
                 </div>
               </div>
               <div class="academic-feature-item">
                 <div class="academic-feature-icon" style="background: #ECFDF5; color: #059669;">
-                  <i class="fa-solid fa-toggle-on"></i>
+                  <i class="fa-solid fa-fish"></i>
                 </div>
                 <div class="academic-feature-text">
-                  <strong>Kontrol Aktuator 6-Channel &amp; Feeder:</strong> Pengendalian saklar pompa pembesaran, pompa peremajaan, aerator oksigen, dan jadwal pemberian pakan ikan.
+                  <strong>Pemberian Pakan Ikan Otomatis (Smart Feeder):</strong> Mengatur jadwal pemberian pakan ikan secara teratur dan otomatis, atau memberi makan ikan langsung secara instan.
                 </div>
               </div>
               <div class="academic-feature-item">
@@ -3365,115 +3370,67 @@ function initConfigModals() {
                   <i class="fa-solid fa-solar-panel"></i>
                 </div>
                 <div class="academic-feature-text">
-                  <strong>Dual Power ATS Solar &amp; Bot Telegram:</strong> Peralihan otomatis catu daya ke panel surya (saat aki &le; 11.7V) serta notifikasi darurat instan via Telegram.
+                  <strong>Cadangan Tenaga Surya (Dual Power ATS):</strong> Sistem otomatis beralih ke daya panel surya saat listrik padam agar kolam tetap aman beroperasi 24 jam nonstop.
+                </div>
+              </div>
+              <div class="academic-feature-item">
+                <div class="academic-feature-icon" style="background: #ECFDF5; color: #059669;">
+                  <i class="fa-solid fa-bell"></i>
+                </div>
+                <div class="academic-feature-text">
+                  <strong>Notifikasi Peringatan Darurat Telegram:</strong> Mengirimkan pesan peringatan otomatis ke ponsel Anda jika terdeteksi kondisi air atau suhu yang berada di luar batas aman.
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- 5. TIM PENELITI (MAHASISWA TUGAS AKHIR) -->
+          <!-- 4. VISI & MISI -->
           <div class="academic-section-card" style="padding: 12px 14px;">
             <div class="academic-section-title">
-              <i class="fa-solid fa-user-graduate" style="color: #2563EB;"></i> Tim Pengembang (Mahasiswa Tugas Akhir)
+              <i class="fa-solid fa-bullseye" style="color: #2563EB;"></i> Visi &amp; Misi
             </div>
-            <div class="academic-person-grid">
-              <div class="academic-person-card">
-                <div class="academic-avatar academic-avatar-blue">ML</div>
-                <div style="flex: 1;">
-                  <div class="academic-person-name">Michelle Anggriany Letsoin</div>
-                  <div class="academic-person-meta">NIM: <strong>16323074</strong> &bull; D-III Manajemen Informatika</div>
-                </div>
-              </div>
-              <div class="academic-person-card">
-                <div class="academic-avatar academic-avatar-blue">CA</div>
-                <div style="flex: 1;">
-                  <div class="academic-person-name">Cindy Arina Aulia</div>
-                  <div class="academic-person-meta">NIM: <strong>16323058</strong> &bull; D-III Manajemen Informatika</div>
-                </div>
-              </div>
-            </div>
-            <div style="margin-top: 8px; font-size: 11px; color: var(--text-muted); border-top: 1px dashed var(--border-color, #E2E8F0); padding-top: 6px;">
-              <strong>Jurusan &amp; Program Studi:</strong> Manajemen Informatika &bull; <strong>Perguruan Tinggi:</strong> Politeknik Negeri Fakfak
-            </div>
-          </div>
-
-          <!-- 6. DEWAN DOSEN PEMBIMBING -->
-          <div class="academic-section-card" style="padding: 12px 14px;">
-            <div class="academic-section-title">
-              <i class="fa-solid fa-chalkboard-user" style="color: #059669;"></i> Dewan Dosen Pembimbing
-            </div>
-            <div class="academic-person-grid">
-              <div class="academic-person-card">
-                <div class="academic-avatar academic-avatar-emerald"><i class="fa-solid fa-user-tie"></i></div>
-                <div style="flex: 1;">
-                  <div class="academic-person-name">Syukron Anas, S.Kom., M.Kom.</div>
-                  <div class="academic-person-meta">Dosen Pembimbing I</div>
-                </div>
-              </div>
-              <div class="academic-person-card">
-                <div class="academic-avatar academic-avatar-emerald"><i class="fa-solid fa-user-tie"></i></div>
-                <div style="flex: 1;">
-                  <div class="academic-person-name">Riyadh Arridha, S.Kom., M.T.</div>
-                  <div class="academic-person-meta">Dosen Pembimbing II</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 7. KONTAK & LOKASI -->
-          <div class="academic-section-card" style="padding: 12px 14px;">
-            <div class="academic-section-title">
-              <i class="fa-solid fa-address-book" style="color: #2563EB;"></i> Kontak &amp; Lokasi Workshop
-            </div>
-            <div class="academic-contact-grid">
-              <a href="mailto:hidroponik.iot.gateway@gmail.com" class="academic-contact-item">
-                <i class="fa-solid fa-envelope" style="color: #EA4335; font-size: 14px;"></i>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <!-- Visi Box -->
+              <div class="academic-vision-box">
+                <div style="font-size: 18px; color: #D97706; flex-shrink: 0; margin-top: 2px;"><i class="fa-solid fa-eye"></i></div>
                 <div>
-                  <div style="font-size: 10px; color: var(--text-muted);">Email Resmi:</div>
-                  <strong>hidroponik.iot.gateway@gmail.com</strong>
+                  <div style="font-size: 11.5px; font-weight: 800; color: #92400E; text-transform: uppercase; letter-spacing: 0.5px;">Visi</div>
+                  <div style="font-size: 11.5px; color: #78350F; line-height: 1.5; margin-top: 2px;">
+                    Mewujudkan sistem pertanian akuaponik modern yang hemat tenaga, ramah lingkungan, dan mudah dikelola oleh siapa saja melalui pemanfaatan teknologi Internet of Things (IoT).
+                  </div>
                 </div>
-              </a>
-              <a href="https://wa.me/6281234567890" target="_blank" class="academic-contact-item">
-                <i class="fa-brands fa-whatsapp" style="color: #25D366; font-size: 16px;"></i>
-                <div>
-                  <div style="font-size: 10px; color: var(--text-muted);">WhatsApp / Konsultasi:</div>
-                  <strong>+62 812-3456-7890</strong>
+              </div>
+
+              <!-- Misi Box -->
+              <div class="academic-services-box">
+                <div style="font-size: 18px; color: #059669; flex-shrink: 0; margin-top: 2px;"><i class="fa-solid fa-rocket"></i></div>
+                <div style="flex: 1;">
+                  <div style="font-size: 11.5px; font-weight: 800; color: #065F46; text-transform: uppercase; letter-spacing: 0.5px;">Misi</div>
+                  <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 4px;">
+                    <div style="display: flex; align-items: flex-start; gap: 6px; font-size: 11.5px; color: #047857; line-height: 1.45;">
+                      <span style="font-weight: 800; color: #059669;">1.</span>
+                      <span><strong>Kemudahan Pengelolaan:</strong> Membantu pengguna merawat ekosistem kolam dan tanaman secara praktis tanpa perlu pengawasan manual terus-menerus.</span>
+                    </div>
+                    <div style="display: flex; align-items: flex-start; gap: 6px; font-size: 11.5px; color: #047857; line-height: 1.45;">
+                      <span style="font-weight: 800; color: #059669;">2.</span>
+                      <span><strong>Presisi &amp; Kualitas Hasil:</strong> Menjaga kestabilan nutrisi, suhu, dan pasokan oksigen air demi hasil panen ikan dan tanaman yang optimal.</span>
+                    </div>
+                    <div style="display: flex; align-items: flex-start; gap: 6px; font-size: 11.5px; color: #047857; line-height: 1.45;">
+                      <span style="font-weight: 800; color: #059669;">3.</span>
+                      <span><strong>Efisiensi &amp; Keandalan:</strong> Menghadirkan teknologi otomasi yang hemat daya, andal 24/7, serta dapat diakses dari mana saja secara real-time.</span>
+                    </div>
+                  </div>
                 </div>
-              </a>
-            </div>
-            <div style="margin-top: 8px; font-size: 11px; color: var(--text-main); background: var(--bg-hover, #F8FAFC); border: 1px solid var(--border-color, #E2E8F0); border-radius: 8px; padding: 8px 10px; display: flex; gap: 8px; align-items: flex-start;">
-              <i class="fa-solid fa-location-dot" style="color: #2563EB; margin-top: 2px;"></i>
-              <div>
-                <strong>Lokasi Kampus &amp; Laboratorium:</strong><br>
-                Laboratorium Komputer &amp; Jaringan, Kampus Politeknik Negeri Fakfak, Jl. Imam Bonjol, Kabupaten Fakfak, Papua Barat.
               </div>
             </div>
           </div>
 
-          <!-- 8. SOSMED -->
-          <div class="academic-section-card" style="padding: 12px 14px;">
-            <div class="academic-section-title">
-              <i class="fa-solid fa-share-nodes" style="color: #7C3AED;"></i> Media Sosial &amp; Dokumentasi
-            </div>
-            <div class="academic-social-row">
-              <a href="https://www.instagram.com/polinef_official" target="_blank" class="social-pill-btn">
-                <i class="fa-brands fa-instagram" style="color: #E1306C;"></i> @polinef_official
-              </a>
-              <a href="https://github.com" target="_blank" class="social-pill-btn">
-                <i class="fa-brands fa-github"></i> Repository Proyek
-              </a>
-              <a href="https://t.me/AkuaponikMonitoringBot" target="_blank" class="social-pill-btn">
-                <i class="fa-brands fa-telegram" style="color: #229ED9;"></i> Telegram Bot Alert
-              </a>
-            </div>
-          </div>
-
-          <!-- 9. COPYRIGHT -->
+          <!-- 5. COPYRIGHT -->
           <div class="academic-copyright">
-            &copy; 2026 Hidroponik IoT Gateway. All Rights Reserved.
+            &copy; 2026 Smart Aquaponics. Hak Cipta Dilindungi.
           </div>
 
-          <!-- 10. TOMBOL TUTUP -->
+          <!-- TOMBOL TUTUP -->
           <div class="modal-actions-center" style="margin-top: 4px;">
             <button class="btn-modal-close width-100" onclick="closeConfigModal()" style="padding: 10px; font-weight: 700; border-radius: 12px; font-size: 13px;">Tutup</button>
           </div>
@@ -3488,12 +3445,15 @@ function initConfigModals() {
 
   const handleLogout = () => {
     openCustomModal(`
-      <div class="modal-content-styled" style="text-align:center;">
-        <h2 class="modal-heading-title" style="color:var(--red);">Keluar Akun</h2>
-        <p style="font-size:13px; color:var(--text-muted); margin:10px 0;">Apakah Anda yakin ingin keluar dari sistem dashboard Smart Akuaponik?</p>
-        <div class="modal-actions-row" style="margin-top:16px;">
-          <button class="btn-modal-close" onclick="closeConfigModal()">Batal</button>
-          <button class="btn-modal-save" style="background:var(--red);" onclick="alert('Anda telah keluar.'); closeConfigModal();">Keluar</button>
+      <div class="modal-content-styled" style="text-align:center; max-width: 380px;">
+        <div style="width: 52px; height: 52px; background: rgba(239, 68, 68, 0.12); color: #EF4444; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto; font-size: 22px;">
+          <i class="fa-solid fa-right-from-bracket"></i>
+        </div>
+        <h2 class="modal-heading-title" style="color: #EF4444; margin-bottom: 6px;">Keluar dari Sistem?</h2>
+        <p style="font-size:13px; color:var(--text-muted); margin:0 0 16px 0; line-height: 1.5;">Sesi Anda saat ini akan diakhiri dan dashboard akan dikunci kembali ke layar login.</p>
+        <div class="modal-actions-row" style="margin-top:16px; display: flex; gap: 10px;">
+          <button class="btn-modal-close" style="flex: 1;" onclick="closeConfigModal()">Batal</button>
+          <button class="btn-modal-save" style="background:#EF4444; color:#fff; flex: 1; border: none; border-radius: 10px; font-weight: 700; cursor: pointer;" onclick="confirmAuthLogout()">Ya, Keluar</button>
         </div>
       </div>
     `);
@@ -3502,3 +3462,335 @@ function initConfigModals() {
   if (sidebarLogout) sidebarLogout.addEventListener('click', handleLogout);
   if (cfgLogout) cfgLogout.addEventListener('click', handleLogout);
 }
+
+/* ==========================================================================
+   AUTHENTICATION & USER SESSION ENGINE (LOGIN & REGISTRATION)
+   ========================================================================== */
+
+const AUTH_STORAGE_KEY = 'aquaponics_auth_users';
+const AUTH_SESSION_KEY = 'aquaponics_active_session';
+
+// Akun bawaan (Default Demo Admin)
+const DEFAULT_AUTH_USERS = [
+  {
+    username: 'admin',
+    password: 'admin123',
+    fullName: 'Administrator Sistem',
+    role: 'Admin',
+    createdAt: 1740000000000
+  }
+];
+
+function getRegisteredUsers() {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) {
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(DEFAULT_AUTH_USERS));
+      return [...DEFAULT_AUTH_USERS];
+    }
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    return [...DEFAULT_AUTH_USERS];
+  } catch (e) {
+    return [...DEFAULT_AUTH_USERS];
+  }
+}
+
+function saveRegisteredUsers(users) {
+  try {
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(users));
+  } catch (e) {
+    console.error('[Auth Error] Gagal menyimpan database user:', e);
+  }
+}
+
+function initAuthSystem() {
+  getRegisteredUsers(); // Pastikan database user lokal terinisialisasi
+
+  // Cek apakah ada sesi aktif di localStorage atau sessionStorage
+  let activeUser = null;
+  const localSession = localStorage.getItem(AUTH_SESSION_KEY);
+  const sessionOnly = sessionStorage.getItem(AUTH_SESSION_KEY);
+
+  if (localSession) {
+    try { activeUser = JSON.parse(localSession); } catch (e) { }
+  } else if (sessionOnly) {
+    try { activeUser = JSON.parse(sessionOnly); } catch (e) { }
+  }
+
+  const authOverlay = document.getElementById('auth-screen-overlay');
+  if (activeUser && activeUser.username) {
+    state.currentUser = activeUser;
+    if (authOverlay) authOverlay.classList.add('hidden-auth');
+    updateLoggedUserUI(activeUser);
+  } else {
+    state.currentUser = null;
+    if (authOverlay) authOverlay.classList.remove('hidden-auth');
+  }
+}
+window.initAuthSystem = initAuthSystem;
+
+function updateLoggedUserUI(user) {
+  if (!user) return;
+  const nameEl = document.getElementById('sidebar-logged-user-name');
+  if (nameEl) {
+    nameEl.innerText = user.fullName || user.username;
+    nameEl.title = `${user.fullName || user.username} (@${user.username})`;
+  }
+}
+
+function switchAuthView(viewMode) {
+  const loginBox = document.getElementById('auth-login-box');
+  const regBox = document.getElementById('auth-register-box');
+  const loginAlert = document.getElementById('login-alert-msg');
+  const regAlert = document.getElementById('reg-alert-msg');
+  const subTitleEl = document.getElementById('auth-sub-title');
+
+  if (loginAlert) loginAlert.style.display = 'none';
+  if (regAlert) regAlert.style.display = 'none';
+
+  if (viewMode === 'register') {
+    if (loginBox) loginBox.style.display = 'none';
+    if (regBox) regBox.style.display = 'block';
+    if (subTitleEl) subTitleEl.innerText = 'Buat akun agar masuk dan mengontrol sistem';
+    const firstInput = document.getElementById('reg-fullname');
+    if (firstInput) setTimeout(() => firstInput.focus(), 50);
+  } else {
+    if (regBox) regBox.style.display = 'none';
+    if (loginBox) loginBox.style.display = 'block';
+    if (subTitleEl) subTitleEl.innerText = 'Masuk untuk memantau dan kontrol sistem';
+    const firstInput = document.getElementById('login-username');
+    if (firstInput) setTimeout(() => firstInput.focus(), 50);
+  }
+}
+window.switchAuthView = switchAuthView;
+
+function togglePasswordVisibility(inputId, btnEl) {
+  const field = document.getElementById(inputId);
+  if (!field) return;
+
+  const isPassword = field.type === 'password';
+  field.type = isPassword ? 'text' : 'password';
+
+  if (btnEl) {
+    btnEl.innerHTML = isPassword
+      ? '<i class="fa-regular fa-eye-slash" style="color: #2563EB;"></i>'
+      : '<i class="fa-regular fa-eye"></i>';
+  }
+}
+window.togglePasswordVisibility = togglePasswordVisibility;
+
+function showAuthAlert(boxId, type, message) {
+  const alertEl = document.getElementById(boxId);
+  if (!alertEl) return;
+
+  alertEl.className = `auth-alert-message ${type}`;
+  alertEl.innerHTML = `<i class="fa-solid ${type === 'error' ? 'fa-triangle-exclamation' : 'fa-circle-check'}"></i> <span>${message}</span>`;
+  alertEl.style.display = 'flex';
+}
+
+function handleAuthLogin(event) {
+  if (event) event.preventDefault();
+
+  const userInp = document.getElementById('login-username');
+  const passInp = document.getElementById('login-password');
+  const remInp = document.getElementById('login-remember');
+  const submitBtn = document.getElementById('btn-login-submit');
+
+  const username = (userInp ? userInp.value : '').trim().toLowerCase();
+  const password = (passInp ? passInp.value : '').trim();
+  const rememberMe = remInp ? remInp.checked : true;
+
+  if (!username || !password) {
+    showAuthAlert('login-alert-msg', 'error', 'Username dan kata sandi wajib diisi!');
+    return;
+  }
+
+  // Tampilkan efek loading pada tombol
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Memverifikasi...';
+  }
+
+  setTimeout(() => {
+    const users = getRegisteredUsers();
+    const matchedUser = users.find(u =>
+      (u.username.toLowerCase() === username || (u.email && u.email.toLowerCase() === username)) &&
+      u.password === password
+    );
+
+    if (matchedUser) {
+      showAuthAlert('login-alert-msg', 'success', `Berhasil masuk! Selamat datang, ${matchedUser.fullName || matchedUser.username}`);
+
+      // Simpan Sesi
+      const sessionData = {
+        username: matchedUser.username,
+        fullName: matchedUser.fullName,
+        role: matchedUser.role || 'User',
+        loginTime: Date.now()
+      };
+
+      if (rememberMe) {
+        localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(sessionData));
+        sessionStorage.removeItem(AUTH_SESSION_KEY);
+      } else {
+        sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(sessionData));
+        localStorage.removeItem(AUTH_SESSION_KEY);
+      }
+
+      state.currentUser = sessionData;
+      updateLoggedUserUI(sessionData);
+
+      setTimeout(() => {
+        const authOverlay = document.getElementById('auth-screen-overlay');
+        if (authOverlay) authOverlay.classList.add('hidden-auth');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>Masuk Sekarang</span> <i class="fa-solid fa-arrow-right"></i>';
+        }
+        if (typeof addNotification === 'function') {
+          addNotification('success', 'Sesi Masuk Berhasil', `Selamat datang kembali, ${matchedUser.fullName || matchedUser.username}!`);
+        }
+      }, 700);
+
+    } else {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span>Masuk Sekarang</span> <i class="fa-solid fa-arrow-right"></i>';
+      }
+      showAuthAlert('login-alert-msg', 'error', 'Username atau kata sandi tidak cocok. Silakan coba lagi!');
+    }
+  }, 400);
+}
+window.handleAuthLogin = handleAuthLogin;
+
+function handleAuthRegister(event) {
+  if (event) event.preventDefault();
+
+  const fnInp = document.getElementById('reg-fullname');
+  const userInp = document.getElementById('reg-username');
+  const passInp = document.getElementById('reg-password');
+  const confInp = document.getElementById('reg-confirm-password');
+  const submitBtn = document.getElementById('btn-reg-submit');
+
+  const fullName = (fnInp ? fnInp.value : '').trim();
+  const username = (userInp ? userInp.value : '').trim().toLowerCase().replace(/\s+/g, '');
+  const password = (passInp ? passInp.value : '').trim();
+  const confirmPassword = (confInp ? confInp.value : '').trim();
+
+  if (!fullName || !username || !password || !confirmPassword) {
+    showAuthAlert('reg-alert-msg', 'error', 'Semua kolom formulir pendaftaran wajib diisi!');
+    return;
+  }
+
+  if (username.length < 3) {
+    showAuthAlert('reg-alert-msg', 'error', 'Username minimal harus 3 karakter!');
+    return;
+  }
+
+  if (password.length < 4) {
+    showAuthAlert('reg-alert-msg', 'error', 'Kata sandi minimal harus 4 karakter!');
+    return;
+  }
+
+  if (password !== confirmPassword) {
+    showAuthAlert('reg-alert-msg', 'error', 'Konfirmasi kata sandi tidak cocok!');
+    return;
+  }
+
+  const users = getRegisteredUsers();
+  const isExist = users.some(u => u.username.toLowerCase() === username);
+
+  if (isExist) {
+    showAuthAlert('reg-alert-msg', 'error', `Username "@${username}" sudah terdaftar. Silakan gunakan username lain!`);
+    return;
+  }
+
+  // Tampilkan efek loading
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Menyimpan Akun...';
+  }
+
+  setTimeout(() => {
+    const newUser = {
+      username: username,
+      password: password,
+      fullName: fullName,
+      role: 'User',
+      createdAt: Date.now()
+    };
+
+    users.push(newUser);
+    saveRegisteredUsers(users);
+
+    // Sinkronisasi akun ke Firebase RTDB users jika tersambung
+    if (window.aquaponicsDB && window.aquaponicsDB.db) {
+      window.aquaponicsDB.db.ref('users/' + username).set({
+        fullName: fullName,
+        username: username,
+        createdAt: Date.now()
+      }).catch(() => {});
+    }
+
+    showAuthAlert('reg-alert-msg', 'success', 'Akun berhasil dibuat! Mengalihkan ke form login...');
+
+    setTimeout(() => {
+      // Reset form reg
+      if (fnInp) fnInp.value = '';
+      if (userInp) userInp.value = '';
+      if (passInp) passInp.value = '';
+      if (confInp) confInp.value = '';
+
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span>Daftar Sekarang</span> <i class="fa-solid fa-check"></i>';
+      }
+
+      // Switch ke view login dan isi username otomatis
+      switchAuthView('login');
+      const loginUserInp = document.getElementById('login-username');
+      const loginPassInp = document.getElementById('login-password');
+      if (loginUserInp) {
+        loginUserInp.value = username;
+      }
+      if (loginPassInp) {
+        loginPassInp.value = password;
+        loginPassInp.focus();
+      }
+
+      showAuthAlert('login-alert-msg', 'success', `Akun @${username} siap digunakan. Silakan klik Masuk.`);
+    }, 1200);
+  }, 400);
+}
+window.handleAuthRegister = handleAuthRegister;
+
+function confirmAuthLogout() {
+  if (typeof closeConfigModal === 'function') closeConfigModal();
+
+  localStorage.removeItem(AUTH_SESSION_KEY);
+  sessionStorage.removeItem(AUTH_SESSION_KEY);
+  state.currentUser = null;
+
+  const authOverlay = document.getElementById('auth-screen-overlay');
+  if (authOverlay) {
+    authOverlay.classList.remove('hidden-auth');
+    switchAuthView('login');
+  }
+
+  const loginAlert = document.getElementById('login-alert-msg');
+  if (loginAlert) {
+    loginAlert.style.display = 'none';
+  }
+
+  const loginUser = document.getElementById('login-username');
+  const loginPass = document.getElementById('login-password');
+  if (loginUser) loginUser.value = '';
+  if (loginPass) loginPass.value = '';
+
+  if (typeof addNotification === 'function') {
+    addNotification('info', 'Sesi Berakhir', 'Anda telah berhasil keluar dari sistem.');
+  }
+}
+window.confirmAuthLogout = confirmAuthLogout;
+
