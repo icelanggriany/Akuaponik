@@ -264,6 +264,21 @@ function initNotificationDropdown() {
   function closeDrawer() {
     if (drawer) drawer.classList.remove('active');
     if (overlay) overlay.classList.remove('active');
+
+    // Otomatis tandai semua notifikasi sudah dibaca saat keluar dari drawer notifikasi
+    if (state.notifications && state.notifications.length > 0) {
+      let changed = false;
+      state.notifications.forEach(n => {
+        if (!n.read) {
+          n.read = true;
+          changed = true;
+        }
+      });
+      if (changed && window.aquaponicsDB && window.aquaponicsDB.markNotificationsRead) {
+        window.aquaponicsDB.markNotificationsRead();
+      }
+    }
+    renderNotifications();
   }
 
   if (bellBtn) {
@@ -321,9 +336,9 @@ function renderNotifications() {
   const unreadCount = notifs.filter(n => !n.read).length;
 
   if (countBadge) {
+    countBadge.innerText = ''; // Hapus angka notifikasi, jadikan titik merah murni
     if (unreadCount > 0) {
-      countBadge.innerText = unreadCount > 99 ? '99+' : unreadCount;
-      countBadge.style.display = 'flex';
+      countBadge.style.display = 'block';
     } else {
       countBadge.style.display = 'none';
     }
